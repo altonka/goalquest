@@ -1,19 +1,34 @@
-// Central state - persisted to localStorage
 const State = (() => {
-  const KEY = 'goalquest_state';
+  const KEY = 'goalquest_v2';
 
   const defaults = {
     goals: [],
     milestones: [],
+    nodes: [],
     tasks: [],
-    user: { xp: 0, level: 1, streak: 0, lastActive: null, badges: [] },
-    clarification: null,
+    user: {
+      xp: 0,
+      level: 1,
+      streak: 0,
+      lastActive: null,
+      badges: [],
+      streakFreezes: 2,
+      lastFreezeReset: null,
+      totalTasksDone: 0,
+      perfectDays: 0,
+    },
     currentGoalId: null,
   };
 
   function load() {
     try {
-      return JSON.parse(localStorage.getItem(KEY)) || { ...defaults };
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return { ...defaults };
+      const saved = JSON.parse(raw);
+      // Migrate: ensure user has new fields
+      saved.user = { ...defaults.user, ...saved.user };
+      if (!saved.nodes) saved.nodes = [];
+      return saved;
     } catch { return { ...defaults }; }
   }
 
