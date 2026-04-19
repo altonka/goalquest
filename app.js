@@ -2,10 +2,13 @@ const App = (() => {
   let currentPage = 'home';
   let notification = null;
   let notifTimer = null;
-  let activeModal = null;      // node id shown in map modal
-  let expandedTaskId = null;   // task id shown expanded on home
+  let activeModal = null;        // node id shown in map modal
+  let expandedTaskId = null;     // task id shown expanded on home
   let rescheduledCount = 0;
-  const completedSteps = {};   // { taskId: Set<stepIndex> } — local only, resets on complete
+  let comebackMode = false;      // user returned after missing days
+  let showReflection = null;     // taskId awaiting difficulty feedback
+  let showWhyReminder = false;   // show "why you started" today
+  const completedSteps = {};     // { taskId: Set<stepIndex> } — local, resets on complete
 
   // ── Navigation ───────────────────────────────────────────────────────────
 
@@ -75,6 +78,37 @@ const App = (() => {
     `;
   }
 
+  // ── Comeback Screen ───────────────────────────────────────────────────────
+
+  function renderComeback(goal, tasks, daysAway) {
+    const s = State.get();
+    const easiest = tasks.filter(t => t.status !== 'done' && t.difficulty === 'easy')[0]
+      || tasks.find(t => t.status !== 'done');
+    return `
+      <div class="page comeback-page">
+        <div class="comeback-card">
+          <div class="comeback-icon">👋</div>
+          <h2 class="comeback-title">You're back.</h2>
+          <p class="comeback-sub">You were away for <strong>${daysAway} day${daysAway > 1 ? 's' : ''}</strong>.</p>
+          ${s.user.streak > 0 ? `<p class="comeback-streak">Your 🔥 ${s.user.streak}-day streak broke.</p>` : ''}
+          <p class="comeback-why">But your goal didn't change.</p>
+          <div class="comeback-goal-box">"${goal.title}"</div>
+          <p class="comeback-cta">One task. Restart your streak.</p>
+        </div>
+        ${easiest ? renderTaskCard(easiest, s.user) : ''}
+        <button class="comeback-skip" onclick="App.dismissComeback()">
+          Skip → See all tasks
+        </button>
+      </div>
+      ${renderBottomNav()}
+    `;
+  }
+
+  function dismissComeback() {
+    comebackMode = false;
+    render();
+  }
+
   // ── Home Page ─────────────────────────────────────────────────────────────
 
   function renderHome() {
@@ -100,13 +134,19 @@ const App = (() => {
 
     const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
     const allTasks = s.tasks.filter(t => t.goalId === goal.id);
+
+    // Comeback check
+    if (comebackMode) return renderComeback(goal, allTasks, Gamification.daysSinceActive(s.user));
+
     const adaptiveMode = Decompose.getAdaptiveMode(s.user);
     const dailyTasks = Decompose.selectDailyTasks(allTasks, goal.hoursPerWeek);
-
     const doneTasks = dailyTasks.filter(t => t.status === 'done');
     const todoTasks = dailyTasks.filter(t => t.status !== 'done');
     const todayPct = dailyTasks.length ? Math.round((doneTasks.length / dailyTasks.length) * 100) : 0;
     const goalPct = Gamification.getGoalProgress(goal.id, allTasks);
+    const identity = Gamification.getGoalIdentity(goal.title);
+    const quickWin = todoTasks.find(t => t.difficulty === 'easy' && t.estimatedMinutes <= 25);
+    const mainTasks = todoTasks.filter(t => t !== quickWin);
 
     return `
       <div class="page">
@@ -117,21 +157,46 @@ const App = (() => {
 
         ${renderStatsStrip(s.user)}
 
-        ${rescheduledCount > 0 ? `<div class="reschedule-notice">📅 ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled to today</div>` : ''}
-        ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);">💡 Lighter load today — focus on finishing 1 task well</div>` : ''}
+        <!-- Identity statement -->
+        ${s.user.totalTasksDone > 0 ? `
+        <div class="identity-bar">
+          <span class="identity-icon">🧠</span>
+          <span>You've completed <strong>${s.user.totalTasksDone}</strong> tasks. You're becoming <strong>${identity}</strong>.</span>
+        </div>
+        ` : ''}
+
+        <!-- Why reminder -->
+        ${showWhyReminder && goal.successCriteria ? `
+        <div class="why-reminder">
+          <div class="why-label">💭 Remember why you started</div>
+          <div class="why-text">${goal.successCriteria}</div>
+          <button class="why-dismiss" onclick="App.dismissWhy()">Got it ✓</button>
+        </div>
+        ` : ''}
+
+        ${rescheduledCount > 0 ? `<div class="reschedule-notice">📅 ${rescheduledCount} task${rescheduledCount > 1 ? 's' : ''} rescheduled to today</div>` : ''}
+        ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);">💡 Lighter load today — 1 task done = win</div>` : ''}
 
         <!-- Goal bar -->
         <div class="goal-progress-strip" style="margin-bottom:16px;">
-          <div class="gp-row">
-            <span class="gp-title">Overall Progress</span>
-            <span class="gp-pct">${goalPct}%</span>
-          </div>
+          <div class="gp-row"><span class="gp-title">Overall Progress</span><span class="gp-pct">${goalPct}%</span></div>
           <div class="gp-bar"><div class="gp-fill" style="width:${goalPct}%"></div></div>
         </div>
 
-        <!-- Today header + perfect day bar -->
+        <!-- Quick Win -->
+        ${quickWin && todoTasks.length > 1 ? `
+        <div class="quick-win-section">
+          <div class="qw-header">
+            <span class="qw-badge">⚡ QUICK WIN</span>
+            <span class="qw-sub">${quickWin.estimatedMinutes} min · zero excuses</span>
+          </div>
+          ${renderTaskCard(quickWin, s.user)}
+        </div>
+        ` : ''}
+
+        <!-- Today header -->
         <div class="today-header">
-          <span class="today-title">⚡ Today's Quest</span>
+          <span class="today-title">Today's Quest</span>
           <span class="today-count">${doneTasks.length}/${dailyTasks.length} done</span>
         </div>
         ${dailyTasks.length ? `
@@ -142,22 +207,72 @@ const App = (() => {
         </div>
         ` : ''}
 
-        <!-- Task list -->
-        ${todoTasks.length
-          ? todoTasks.map(t => renderTaskCard(t, s.user)).join('')
-          : `<div class="all-done-card"><h3>🎉 All Done!</h3><p>Quest complete for today.<br>Streak maintained — see you tomorrow!</p></div>`
+        <!-- Main tasks -->
+        ${mainTasks.length
+          ? mainTasks.map(t => renderTaskCard(t, s.user)).join('')
+          : todoTasks.length === 0
+            ? `<div class="all-done-card"><h3>🎉 All Done!</h3><p>Quest complete for today.<br>Streak alive — see you tomorrow!</p></div>`
+            : ''
         }
 
-        <!-- Done tasks (collapsed) -->
-        ${doneTasks.length ? `
-          <div style="margin-top:10px;">
-            ${doneTasks.map(t => renderTaskCard(t, s.user)).join('')}
-          </div>
-        ` : ''}
+        <!-- Done tasks -->
+        ${doneTasks.length ? `<div style="margin-top:8px;">${doneTasks.map(t => renderTaskCard(t, s.user)).join('')}</div>` : ''}
       </div>
+      ${showReflection ? renderReflectionModal(showReflection) : ''}
       ${renderBottomNav()}
     `;
   }
+
+  // ── Reflection Modal ──────────────────────────────────────────────────────
+
+  function renderReflectionModal(taskId) {
+    return `
+      <div class="reflection-overlay" onclick="App.closeReflection(event)">
+        <div class="reflection-sheet">
+          <p class="reflection-q">How was that task?</p>
+          <div class="reflection-btns">
+            <button class="ref-btn ref-hard"  onclick="App.submitReflection('${taskId}','hard')">😅 Too Hard</button>
+            <button class="ref-btn ref-right" onclick="App.submitReflection('${taskId}','right')">👌 Just Right</button>
+            <button class="ref-btn ref-easy"  onclick="App.submitReflection('${taskId}','easy')">⚡ Too Easy</button>
+          </div>
+          <button class="reflection-skip" onclick="App.closeReflection()">Skip</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function closeReflection(e) {
+    if (e && e.target !== e.currentTarget) return;
+    showReflection = null;
+    render();
+  }
+
+  function submitReflection(taskId, rating) {
+    showReflection = null;
+    State.set(s => {
+      const tf = { ...(s.user.taskFeedback || {}), [taskId]: rating };
+      const recentRatings = Object.values(tf).slice(-5);
+      const hardCount = recentRatings.filter(r => r === 'hard').length;
+      const easyCount = recentRatings.filter(r => r === 'easy').length;
+      return {
+        ...s,
+        user: {
+          ...s.user,
+          taskFeedback: tf,
+          consecutiveHard: rating === 'hard' ? (s.user.consecutiveHard || 0) + 1 : 0,
+          consecutiveEasy: rating === 'easy' ? (s.user.consecutiveEasy || 0) + 1 : 0,
+          // Adaptive: if 3+ consecutive hard → mark reduced; 3+ easy → mark boosted
+          totalTasksSkipped: hardCount >= 3
+            ? (s.user.totalTasksSkipped || 0) + 1
+            : s.user.totalTasksSkipped || 0,
+        },
+      };
+    });
+    const msgs = { hard: '💡 Got it — easier tasks coming up', right: '🎯 Perfect calibration', easy: '🚀 Leveling up your tasks' };
+    showNotif(msgs[rating] || '');
+  }
+
+  function dismissWhy() { showWhyReminder = false; render(); }
 
   // ─── TASK CARD — collapsed + expanded ──────────────────────────────────────
 
@@ -449,6 +564,23 @@ const App = (() => {
           </div>
         </div>
 
+        <!-- Streak Calendar -->
+        <div class="streak-cal-section">
+          <h3>📅 Last 28 Days</h3>
+          <div class="streak-calendar">
+            ${Gamification.buildStreakCalendar(u).map(d => `
+              <div class="cal-day ${d.active ? 'active' : ''} ${d.isToday ? 'today' : ''}"
+                   title="${d.date}">
+                <span class="cal-num">${d.day}</span>
+              </div>
+            `).join('')}
+          </div>
+          <div class="cal-legend">
+            <span><span class="cal-dot active"></span> Active</span>
+            <span><span class="cal-dot"></span> Missed</span>
+          </div>
+        </div>
+
         <div class="danger-zone">
           <h4>⚠️ Danger Zone</h4>
           <button class="btn-danger" onclick="App.resetAll()">Reset All Data</button>
@@ -575,6 +707,14 @@ const App = (() => {
       ...m, progress: Gamification.getMilestoneProgress(m.id, updatedTasks),
     }));
 
+    // Track active history for streak calendar
+    const today = new Date().toISOString().split('T')[0];
+    const activeHistory = [...new Set([...(user.activeHistory || []), today])];
+    user = { ...user, activeHistory };
+
+    // If this was a comeback task, reset comeback mode
+    if (comebackMode) { comebackMode = false; }
+
     State.set({ tasks: updatedTasks, user, milestones: updatedMilestones });
 
     // Collapse and clear steps
@@ -598,6 +738,9 @@ const App = (() => {
 
     // Re-render modal if open
     if (activeModal) setTimeout(() => render(), 500);
+
+    // Show difficulty reflection after XP animation
+    setTimeout(() => { showReflection = taskId; render(); }, 1400);
   }
 
   // ── Streak Freeze ─────────────────────────────────────────────────────────
@@ -688,17 +831,34 @@ const App = (() => {
   // ── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
-    // Refresh weekly freezes
     const s = State.get();
+
+    // Refresh weekly freezes
     const refreshed = Gamification.refreshWeeklyFreezes(s.user);
     if (refreshed !== s.user) State.set({ user: refreshed });
 
     // Auto-reschedule overdue
     autoReschedule();
+
+    // Comeback detection: away 2+ days → show comeback screen
+    if (s.goals.length) {
+      const daysAway = Gamification.daysSinceActive(s.user);
+      if (daysAway >= 2) {
+        comebackMode = true;
+        // Increment comeback count
+        State.set(st => ({ ...st, user: { ...st.user, comebackCount: (st.user.comebackCount || 0) + 1 } }));
+      }
+    }
+
+    // Why reminder: show every 3rd day or on return
+    const totalDone = s.user.totalTasksDone || 0;
+    if (totalDone > 0 && totalDone % 3 === 0) showWhyReminder = true;
+    if (comebackMode) showWhyReminder = true;
+
     render();
   }
 
   init();
 
-  return { nav, clarNext, clarBack, clarSkip, completeTask, expandTask, collapseTask, toggleStep, openNode, closeModal, useFreeze, resetAll };
+  return { nav, clarNext, clarBack, clarSkip, completeTask, expandTask, collapseTask, toggleStep, openNode, closeModal, useFreeze, resetAll, dismissComeback, dismissWhy, submitReflection, closeReflection };
 })();

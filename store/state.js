@@ -16,6 +16,12 @@ const State = (() => {
       lastFreezeReset: null,
       totalTasksDone: 0,
       perfectDays: 0,
+      activeHistory: [],        // dates user completed ≥1 task
+      taskFeedback: {},         // taskId → 'hard'|'right'|'easy'
+      consecutiveHard: 0,       // consecutive "too hard" feedbacks
+      consecutiveEasy: 0,       // consecutive "too easy" feedbacks
+      comebackCount: 0,         // times returned after breaking streak
+      goalIdentity: '',         // e.g. "a consultant"
     },
     currentGoalId: null,
   };
@@ -27,6 +33,8 @@ const State = (() => {
       const saved = JSON.parse(raw);
       // Migrate: ensure user has new fields
       saved.user = { ...defaults.user, ...saved.user };
+      if (!saved.user.activeHistory) saved.user.activeHistory = [];
+      if (!saved.user.taskFeedback) saved.user.taskFeedback = {};
       if (!saved.nodes) saved.nodes = [];
       return saved;
     } catch { return { ...defaults }; }

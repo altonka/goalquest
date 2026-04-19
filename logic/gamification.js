@@ -135,10 +135,51 @@ const Gamification = (() => {
     return Math.round((gTasks.filter(t => t.status === 'done').length / gTasks.length) * 100);
   }
 
+  // ─── Streak Calendar — last 28 days ─────────────────────────────────────────
+  function buildStreakCalendar(user) {
+    const today = new Date();
+    const history = new Set(user.activeHistory || []);
+    const days = [];
+    for (let i = 27; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const str = d.toISOString().split('T')[0];
+      const isToday = i === 0;
+      const isFuture = i < 0;
+      days.push({
+        date: str,
+        label: d.toLocaleDateString('en', { weekday: 'short' })[0],
+        day: d.getDate(),
+        active: history.has(str),
+        isToday,
+        isFuture,
+      });
+    }
+    return days;
+  }
+
+  // ─── Goal-based identity ─────────────────────────────────────────────────────
+  function getGoalIdentity(goalTitle) {
+    const g = (goalTitle || '').toLowerCase();
+    if (/consult|mbb|mckinsey|bain|bcg/.test(g)) return 'a consultant';
+    if (/fit|gym|weight|muscle|run/.test(g)) return 'an athlete';
+    if (/startup|founder|product|saas/.test(g)) return 'a founder';
+    if (/learn|study|language|code|program/.test(g)) return 'a learner';
+    return 'your best self';
+  }
+
+  // ─── Days since last active ──────────────────────────────────────────────────
+  function daysSinceActive(user) {
+    if (!user.lastActive) return 0;
+    const today = new Date().toISOString().split('T')[0];
+    return Math.round((new Date(today) - new Date(user.lastActive)) / 86400000);
+  }
+
   return {
     getLevelInfo, getMomentumMultiplier, getMomentumLabel,
     completeTask, getMilestoneProgress, getGoalProgress,
     refreshWeeklyFreezes, useStreakFreeze, checkPerfectDay,
+    buildStreakCalendar, getGoalIdentity, daysSinceActive,
     BADGES, LEVELS,
   };
 })();
