@@ -2,8 +2,10 @@ const App = (() => {
   let currentPage = 'home';
   let notification = null;
   let notifTimer = null;
-  let activeModal = null;   // node id currently shown in modal
+  let activeModal = null;      // node id shown in map modal
+  let expandedTaskId = null;   // task id shown expanded on home
   let rescheduledCount = 0;
+  const completedSteps = {};   // { taskId: Set<stepIndex> } — local only, resets on complete
 
   // ── Navigation ───────────────────────────────────────────────────────────
 
@@ -97,24 +99,26 @@ const App = (() => {
     }
 
     const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
-    const tasks = s.tasks.filter(t => t.goalId === goal.id);
-    const today = new Date().toISOString().split('T')[0];
-    const todayTasks = tasks.filter(t => t.deadline === today);
-    const todayDone = todayTasks.filter(t => t.status === 'done').length;
-    const todayTodo = todayTasks.filter(t => t.status !== 'done');
-    const todayPct = todayTasks.length ? Math.round((todayDone / todayTasks.length) * 100) : 0;
-    const goalPct = Gamification.getGoalProgress(goal.id, tasks);
+    const allTasks = s.tasks.filter(t => t.goalId === goal.id);
+    const adaptiveMode = Decompose.getAdaptiveMode(s.user);
+    const dailyTasks = Decompose.selectDailyTasks(allTasks, goal.hoursPerWeek);
+
+    const doneTasks = dailyTasks.filter(t => t.status === 'done');
+    const todoTasks = dailyTasks.filter(t => t.status !== 'done');
+    const todayPct = dailyTasks.length ? Math.round((doneTasks.length / dailyTasks.length) * 100) : 0;
+    const goalPct = Gamification.getGoalProgress(goal.id, allTasks);
 
     return `
       <div class="page">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-top:6px;">
           <h2 style="font-size:1rem;font-weight:800;">Goal<span class="accent">Quest</span></h2>
-          <span style="font-size:0.78rem;color:var(--muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${goal.title}</span>
+          <span style="font-size:0.78rem;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${goal.title}</span>
         </div>
 
         ${renderStatsStrip(s.user)}
 
         ${rescheduledCount > 0 ? `<div class="reschedule-notice">📅 ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled to today</div>` : ''}
+        ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);">💡 Lighter load today — focus on finishing 1 task well</div>` : ''}
 
         <!-- Goal bar -->
         <div class="goal-progress-strip" style="margin-bottom:16px;">
@@ -128,9 +132,9 @@ const App = (() => {
         <!-- Today header + perfect day bar -->
         <div class="today-header">
           <span class="today-title">⚡ Today's Quest</span>
-          <span class="today-count">${todayDone}/${todayTasks.length} done</span>
+          <span class="today-count">${doneTasks.length}/${dailyTasks.length} done</span>
         </div>
-        ${todayTasks.length ? `
+        ${dailyTasks.length ? `
         <div class="perfect-progress">
           <span class="pp-label">🌟 Perfect Day</span>
           <div class="pp-bar-outer"><div class="pp-bar-inner" style="width:${todayPct}%"></div></div>
@@ -139,53 +143,144 @@ const App = (() => {
         ` : ''}
 
         <!-- Task list -->
-        ${todayTodo.length ? todayTodo.map(t => renderTaskCard(t, s.user)).join('') : `
-          <div class="all-done-card">
-            <h3>🎉 All Done!</h3>
-            <p>You've completed all tasks for today.<br>Keep your streak alive tomorrow!</p>
-          </div>
-        `}
+        ${todoTasks.length
+          ? todoTasks.map(t => renderTaskCard(t, s.user)).join('')
+          : `<div class="all-done-card"><h3>🎉 All Done!</h3><p>Quest complete for today.<br>Streak maintained — see you tomorrow!</p></div>`
+        }
 
-        <!-- Upcoming if nothing today -->
-        ${!todayTasks.length ? renderUpcoming(tasks) : ''}
+        <!-- Done tasks (collapsed) -->
+        ${doneTasks.length ? `
+          <div style="margin-top:10px;">
+            ${doneTasks.map(t => renderTaskCard(t, s.user)).join('')}
+          </div>
+        ` : ''}
       </div>
       ${renderBottomNav()}
     `;
   }
 
-  function renderUpcoming(tasks) {
-    const upcoming = Decompose.getUpcomingTasks(tasks, 7);
-    if (!upcoming.length) return '';
-    return `
-      <div style="margin-top:20px;">
-        <p class="section-title">Next 7 Days</p>
-        ${upcoming.slice(0, 6).map(t => renderTaskCard(t)).join('')}
-      </div>
-    `;
-  }
+  // ─── TASK CARD — collapsed + expanded ──────────────────────────────────────
 
-  function renderTaskCard(task) {
-    const s = State.get();
-    const mult = Gamification.getMomentumMultiplier(s.user.streak);
+  function renderTaskCard(task, user) {
+    const s = user ? { user } : State.get();
+    const u = s.user || s;
+    const mult = Gamification.getMomentumMultiplier(u.streak || 0);
     const effectiveXP = Math.round(task.xpReward * mult);
-    const isBoss = task.isBoss;
     const isDone = task.status === 'done';
-    return `
-      <div class="task-card ${isBoss ? 'boss' : 'normal'} ${isDone ? 'done' : ''}" id="tc-${task.id}">
-        <button class="task-check-btn ${isDone ? 'checked' : ''} ${isBoss ? 'boss-btn' : ''}"
-          onclick="App.completeTask('${task.id}', event)">
-          ${isDone ? '✓' : isBoss ? '⚔️' : ''}
-        </button>
-        <div class="task-body">
-          <div class="task-title">${task.title}</div>
-          <div class="task-meta">
-            <span class="meta-pill time">⏱ ${task.estimatedMinutes}min</span>
-            <span class="meta-pill ${isBoss ? 'boss-xp' : 'xp'}">+${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</span>
-            ${isBoss ? '<span class="meta-pill boss-xp">⚔️ Boss</span>' : ''}
+    const isExpanded = expandedTaskId === task.id;
+    const diffColor = { easy: 'var(--success)', core: 'var(--accent)', stretch: 'var(--warn)' }[task.difficulty] || 'var(--accent)';
+
+    if (isDone) {
+      return `
+        <div class="task-card done" id="tc-${task.id}">
+          <div class="tc-done-check">✓</div>
+          <div class="task-body">
+            <div class="task-title" style="text-decoration:line-through;opacity:0.6;">${task.title}</div>
           </div>
+          <span class="meta-pill xp" style="flex-shrink:0;">+${effectiveXP} XP</span>
+        </div>`;
+    }
+
+    if (!isExpanded) {
+      // ── COLLAPSED ──
+      return `
+        <div class="task-card ${task.isBoss ? 'boss' : 'normal'}" id="tc-${task.id}">
+          <div class="tc-collapsed">
+            <div class="tc-top-row">
+              <span class="tc-diff-badge" style="background:${diffColor}20;color:${diffColor};border-color:${diffColor}40;">
+                ${task.difficulty}
+              </span>
+              <span class="tc-title-collapsed">${task.title}</span>
+              ${task.isBoss ? '<span class="meta-pill boss-xp">⚔️ Boss</span>' : ''}
+            </div>
+            <div class="tc-bottom-row">
+              <span class="meta-pill time">⏱ ${task.estimatedMinutes}min</span>
+              <span class="meta-pill ${task.isBoss ? 'boss-xp' : 'xp'}">+${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</span>
+              <button class="btn-start" onclick="App.expandTask('${task.id}')">▶ Start Task</button>
+            </div>
+          </div>
+        </div>`;
+    }
+
+    // ── EXPANDED ──
+    const steps = task.steps || [];
+    const doneSteps = completedSteps[task.id] || new Set();
+
+    return `
+      <div class="task-card ${task.isBoss ? 'boss' : 'normal'} expanded" id="tc-${task.id}">
+
+        <!-- Header -->
+        <div class="tc-exp-header">
+          <div>
+            <span class="tc-diff-badge" style="background:${diffColor}20;color:${diffColor};border-color:${diffColor}40;">${task.difficulty}</span>
+            <div class="tc-exp-title">${task.title}</div>
+            <div class="tc-exp-meta">⏱ ${task.estimatedMinutes} min · +${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</div>
+          </div>
+          <button class="tc-collapse-btn" onclick="App.collapseTask()">✕</button>
         </div>
-      </div>
-    `;
+
+        <!-- Start trigger -->
+        <div class="tc-start-trigger">
+          <span class="tc-trigger-label">👉 Start with</span>
+          <span class="tc-trigger-text">${task.startTrigger || 'Open your materials and begin immediately'}</span>
+        </div>
+
+        <!-- Steps -->
+        ${steps.length ? `
+        <div class="tc-steps">
+          <div class="tc-section-label">Steps</div>
+          ${steps.map((step, i) => `
+            <label class="tc-step ${doneSteps.has(i) ? 'checked' : ''}" onclick="App.toggleStep('${task.id}', ${i})">
+              <span class="tc-step-check">${doneSteps.has(i) ? '✓' : ''}</span>
+              <span class="tc-step-text">${step}</span>
+            </label>
+          `).join('')}
+        </div>
+        ` : ''}
+
+        <!-- Done when -->
+        <div class="tc-done-when">
+          <span class="tc-done-label">✅ Done when</span>
+          <span class="tc-done-text">${task.completionCondition || 'Task is fully completed'}</span>
+        </div>
+
+        <!-- Focus tip -->
+        ${task.focusTip ? `
+        <div class="tc-focus-tip">
+          <span class="tc-focus-icon">⏱</span>
+          <span>${task.focusTip}</span>
+        </div>
+        ` : ''}
+
+        <!-- Resources -->
+        ${task.resources && task.resources.length ? `
+        <div class="tc-resources">
+          <div class="tc-section-label">🔗 Resources</div>
+          ${task.resources.map(r => `
+            <a class="tc-resource ${r.primary ? 'primary' : ''}" href="${r.url || '#'}" target="_blank" rel="noopener">
+              ${r.primary ? '★ ' : ''}${r.label}
+            </a>
+          `).join('')}
+        </div>
+        ` : ''}
+
+        <!-- Community -->
+        ${task.community ? `
+        <div class="tc-community">
+          <span class="tc-community-icon">💬</span>
+          <span>${task.community}</span>
+        </div>
+        ` : ''}
+
+        <!-- Actions -->
+        <div class="tc-actions">
+          <button class="btn btn-ghost" onclick="App.collapseTask()">Collapse</button>
+          <button class="btn btn-primary ${task.isBoss ? 'boss-complete-btn' : ''}"
+            onclick="App.completeTask('${task.id}', event)">
+            ${task.isBoss ? '⚔️ Complete Boss' : '✓ Mark Complete'}
+          </button>
+        </div>
+      </div>`;
   }
 
   // ── Progress Map ──────────────────────────────────────────────────────────
@@ -440,6 +535,30 @@ const App = (() => {
     }, 1200);
   }
 
+  // ── Task Expansion ───────────────────────────────────────────────────────
+
+  function expandTask(taskId) {
+    expandedTaskId = taskId;
+    render();
+    setTimeout(() => {
+      const el = document.getElementById(`tc-${taskId}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
+
+  function collapseTask() {
+    expandedTaskId = null;
+    render();
+  }
+
+  function toggleStep(taskId, stepIndex) {
+    if (!completedSteps[taskId]) completedSteps[taskId] = new Set();
+    completedSteps[taskId].has(stepIndex)
+      ? completedSteps[taskId].delete(stepIndex)
+      : completedSteps[taskId].add(stepIndex);
+    render();
+  }
+
   // ── Task Completion ───────────────────────────────────────────────────────
 
   function completeTask(taskId, event) {
@@ -457,6 +576,10 @@ const App = (() => {
     }));
 
     State.set({ tasks: updatedTasks, user, milestones: updatedMilestones });
+
+    // Collapse and clear steps
+    expandedTaskId = null;
+    delete completedSteps[taskId];
 
     // Flash the card
     const card = document.getElementById(`tc-${taskId}`);
@@ -577,5 +700,5 @@ const App = (() => {
 
   init();
 
-  return { nav, clarNext, clarBack, clarSkip, completeTask, openNode, closeModal, useFreeze, resetAll };
+  return { nav, clarNext, clarBack, clarSkip, completeTask, expandTask, collapseTask, toggleStep, openNode, closeModal, useFreeze, resetAll };
 })();
