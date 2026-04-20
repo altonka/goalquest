@@ -13,7 +13,7 @@ module.exports = async function handler(req, res) {
   if (!goalText) return res.status(400).json({ error: 'goalText is required' });
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
+  if (!apiKey) return res.status(500).json({ error: 'API key not configured — add GEMINI_API_KEY in Vercel environment variables' });
 
   const msPerWeek = 7 * 24 * 60 * 60 * 1000;
   const totalWeeks = deadline
