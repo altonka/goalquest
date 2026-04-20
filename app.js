@@ -65,7 +65,7 @@ const App = (() => {
     ];
     return `
       <aside class="sidebar" role="navigation" aria-label="Main navigation">
-        <div class="sidebar-logo">Goal<span>Quest</span></div>
+        <div class="sidebar-logo"><span class="sidebar-logo-dot"></span>Goal<span>Quest</span></div>
         <nav class="sidebar-nav">
           ${items.map(it => `
             <button class="sidebar-item ${currentPage === it.id ? 'active' : ''}"
@@ -189,9 +189,9 @@ const App = (() => {
 
     return `
       <div class="page">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding-top:6px;">
-          <h2 style="font-size:1rem;font-weight:800;">Goal<span class="accent">Quest</span></h2>
-          <span style="font-size:0.78rem;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${goal.title}</span>
+        <div style="margin-bottom:16px;padding-top:4px;">
+          <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted2);margin-bottom:2px;">Active Quest</div>
+          <div style="font-size:0.9rem;font-weight:700;color:var(--text);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${goal.title}</div>
         </div>
 
         ${renderStatsStrip(s.user)}
@@ -320,7 +320,7 @@ const App = (() => {
     const effectiveXP = Math.round(task.xpReward * mult);
     const isDone = task.status === 'done';
     const isExpanded = expandedTaskId === task.id;
-    const diffColor = { easy: 'var(--success)', core: 'var(--accent)', stretch: 'var(--warn)' }[task.difficulty] || 'var(--accent)';
+    const diffColor = { easy: 'var(--success)', core: 'var(--accent)', stretch: 'var(--danger)' }[task.difficulty] || 'var(--accent)';
 
     if (isDone) {
       return `
