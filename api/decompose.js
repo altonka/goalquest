@@ -9,7 +9,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { goalText, deadline, hoursPerWeek, currentLevel, successCriteria } = req.body || {};
+  const { goalText, deadline, hoursPerWeek, currentLevel, successCriteria, modifier } = req.body || {};
   if (!goalText) return res.status(400).json({ error: 'goalText is required' });
 
   const apiKey = process.env.GROQ_API_KEY;
@@ -62,7 +62,8 @@ Requirements:
 - steps: 3-5 steps, each with time estimate in parentheses
 - completionCondition: a concrete, verifiable outcome
 - All tasks must be directly and specifically relevant to: "${goalText}"
-- Use real, specific websites and tools relevant to this exact goal`;
+- Use real, specific websites and tools relevant to this exact goal
+${modifier ? `\nIMPORTANT — The user reviewed the draft plan and requested: "${modifier}". Adjust ALL aspects of the plan to reflect this preference.` : ''}`;
 
   try {
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {

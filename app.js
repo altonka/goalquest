@@ -5,6 +5,8 @@ const App = (() => {
   let activeModal = null;        // node id shown in map modal
   let expandedTaskId = null;     // task id shown expanded on home
   let rescheduledCount = 0;
+  let draftPlan = null;
+  let draftOptimizing = false;
   let comebackMode = false;      // user returned after missing days
   let showReflection = null;     // taskId awaiting difficulty feedback
   let showWhyReminder = false;   // show "why you started" today
@@ -831,18 +833,44 @@ const App = (() => {
   function generatePlan() {
     currentPage = 'generating';
     render();
-    Decompose.buildPlanAI(clarData).then(({ goal, milestones, tasks, nodes }) => {
-      State.set(s => ({
-        ...s,
-        goals: [...s.goals, goal],
-        milestones: [...s.milestones, ...milestones],
-        tasks: [...s.tasks, ...tasks],
-        nodes: [...(s.nodes || []), ...nodes],
-        currentGoalId: goal.id,
-      }));
-      clarStep = 0; clarData = {};
-      currentPage = 'home';
-      showNotif(`🚀 ${milestones.length} worlds, ${nodes.length} nodes, ${tasks.length} tasks created!`);
+    Decompose.buildPlanAI(clarData).then((plan) => {
+      draftPlan = plan;
+      currentPage = 'plan-preview';
+      render();
+    });
+  }
+
+  function backToQuestions() {
+    clarStep = 0;
+    currentPage = 'new-goal';
+    render();
+  }
+
+  function approvePlan() {
+    if (!draftPlan) return;
+    const { goal, milestones, tasks, nodes } = draftPlan;
+    State.set(s => ({
+      ...s,
+      goals: [...s.goals, goal],
+      milestones: [...s.milestones, ...milestones],
+      tasks: [...s.tasks, ...tasks],
+      nodes: [...(s.nodes || []), ...nodes],
+      currentGoalId: goal.id,
+    }));
+    clarStep = 0; clarData = {};
+    draftPlan = null;
+    currentPage = 'home';
+    showNotif(`🚀 Quest approved! ${milestones.length} worlds, ${tasks.length} tasks ready.`);
+  }
+
+  function optimizePlan(modifier) {
+    draftOptimizing = true;
+    render();
+    Decompose.buildPlanAI({ ...clarData, modifier }).then((plan) => {
+      draftPlan = plan;
+      draftOptimizing = false;
+      currentPage = 'plan-preview';
+      render();
     });
   }
 
@@ -995,6 +1023,168 @@ const App = (() => {
     `;
   }
 
+  // ── Plan Preview ──────────────────────────────────────────────────────────
+
+  function fmtDate(str) {
+    if (!str) return '';
+    const d = new Date(str + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  function fmtDateShort(str) {
+    if (!str) return '';
+    const d = new Date(str + 'T00:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function renderPlanPreview() {
+    if (!draftPlan) { currentPage = 'home'; return renderHome(); }
+    if (draftOptimizing) {
+      return `
+        <div class="generating-page">
+          <div class="gen-inner">
+            <div class="spinner"></div>
+            <h2>Optimizing your plan...</h2>
+            <p>Adjusting milestones and tasks · Almost done</p>
+          </div>
+        </div>`;
+    }
+
+    const { goal, milestones, tasks } = draftPlan;
+    const sampleTasks = tasks.slice(0, 3);
+    const dailyMins = Math.round((goal.hoursPerWeek * 60) / 7);
+    const weeksCount = Math.max(1, Math.round(
+      (new Date(goal.deadline + 'T00:00:00') - new Date(goal.startDate + 'T00:00:00'))
+      / (7 * 24 * 60 * 60 * 1000)
+    ));
+    const m0Tasks = tasks.filter(t => t.milestoneId === milestones[0]?.id).slice(0, 2);
+    const keyResources = m0Tasks.flatMap(t => t.resources || []).filter(r => r.primary).slice(0, 4);
+
+    const OPTIMIZE_OPTIONS = [
+      { label: '😌 Make Easier',      modifier: 'make this plan easier with simpler tasks and reduced intensity' },
+      { label: '🔥 More Intensive',   modifier: 'make this plan more intensive with harder tasks and higher standards' },
+      { label: '⚡ Shorten Timeline', modifier: 'compress the milestones for faster completion while keeping quality' },
+      { label: '🏋️ More Practice',    modifier: 'replace theory tasks with more hands-on practice and exercises' },
+      { label: '📺 Video Resources',  modifier: 'replace reading resources with video tutorials and YouTube-based learning' },
+      { label: '🎯 Shorter Tasks',    modifier: 'break all tasks into shorter sessions under 30 minutes each' },
+    ];
+
+    return `
+      <div class="preview-page">
+        <div class="preview-header">
+          <button class="btn-back" onclick="App.backToQuestions()">← Edit</button>
+          <div class="preview-header-title">Your Quest Plan</div>
+          <button class="btn btn-primary" onclick="App.approvePlan()">Approve →</button>
+        </div>
+
+        <div class="preview-section">
+          <div class="preview-section-label">YOUR GOAL</div>
+          <div class="preview-goal-card">
+            <div class="preview-goal-title">${goal.title}</div>
+            <div class="preview-goal-meta">
+              <span>📅 ${fmtDate(goal.deadline)}</span>
+              <span>⏱ ${goal.hoursPerWeek} hrs/week</span>
+              <span>📆 ${weeksCount} weeks</span>
+            </div>
+            ${goal.successCriteria && goal.successCriteria !== `Successfully achieve: ${goal.title}` ? `
+            <div class="preview-success">
+              <span>🎯</span>
+              <span>${goal.successCriteria}</span>
+            </div>` : ''}
+          </div>
+        </div>
+
+        <div class="preview-section">
+          <div class="preview-section-label">MILESTONE ROADMAP</div>
+          ${milestones.map((m, i) => `
+            <div class="preview-milestone" style="border-left:3px solid ${m.color};">
+              <div class="pm-top">
+                <span class="pm-world" style="color:${m.color};">World ${i + 1}</span>
+                <span class="pm-title">${m.title}</span>
+                <span class="pm-date">${fmtDateShort(m.deadline)}</span>
+              </div>
+              <div class="pm-desc">${m.desc}</div>
+            </div>
+          `).join('')}
+        </div>
+
+        <div class="preview-section">
+          <div class="preview-section-label">WEEKLY WORKLOAD</div>
+          <div class="preview-workload">
+            <div class="pw-stat">
+              <span class="pw-val">${goal.hoursPerWeek}h</span>
+              <span class="pw-label">per week</span>
+            </div>
+            <div class="pw-divider"></div>
+            <div class="pw-stat">
+              <span class="pw-val">~${dailyMins}m</span>
+              <span class="pw-label">per day</span>
+            </div>
+            <div class="pw-divider"></div>
+            <div class="pw-stat">
+              <span class="pw-val">${weeksCount}</span>
+              <span class="pw-label">weeks</span>
+            </div>
+            <div class="pw-divider"></div>
+            <div class="pw-stat">
+              <span class="pw-val">${tasks.length}</span>
+              <span class="pw-label">tasks total</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-section">
+          <div class="preview-section-label">WEEK 1 — SAMPLE TASKS</div>
+          ${sampleTasks.map(t => {
+            const dc = t.difficulty === 'easy' ? 'var(--success)' : t.difficulty === 'stretch' ? 'var(--danger)' : 'var(--accent)';
+            const db = t.difficulty === 'easy' ? 'var(--success-l)' : t.difficulty === 'stretch' ? 'var(--danger-l)' : 'var(--accent-l)';
+            return `
+              <div class="preview-task-card">
+                <div class="ptc-top">
+                  <span class="ptc-diff" style="background:${db};color:${dc};">${t.difficulty}</span>
+                  <span class="ptc-title">${t.title}</span>
+                  <span class="ptc-time">⏱ ${t.estimatedMinutes}m</span>
+                </div>
+                ${t.startTrigger ? `<div class="ptc-trigger">👉 ${t.startTrigger}</div>` : ''}
+                ${t.steps && t.steps.length ? `
+                  <ul class="ptc-steps">
+                    ${t.steps.slice(0, 3).map(s => `<li>${s}</li>`).join('')}
+                  </ul>` : ''}
+                ${t.completionCondition ? `<div class="ptc-done">✅ ${t.completionCondition}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>
+
+        ${keyResources.length ? `
+        <div class="preview-section">
+          <div class="preview-section-label">KEY RESOURCES</div>
+          <div class="preview-resources">
+            ${keyResources.map(r => `
+              <a class="preview-resource" href="${r.url || '#'}" target="_blank" rel="noopener">
+                🔗 ${r.label}
+              </a>`).join('')}
+          </div>
+        </div>` : ''}
+
+        <div class="preview-section">
+          <div class="preview-section-label">OPTIMIZE PLAN</div>
+          <p class="preview-optimize-hint">Not happy with the draft? Adjust before you commit.</p>
+          <div class="preview-optimize-grid">
+            ${OPTIMIZE_OPTIONS.map(o => `
+              <button class="opt-btn" onclick="App.optimizePlan('${o.modifier}')">${o.label}</button>
+            `).join('')}
+          </div>
+        </div>
+
+        <div class="preview-cta">
+          <button class="btn btn-ghost" onclick="App.backToQuestions()">← Edit Answers</button>
+          <button class="btn btn-primary btn-lg" onclick="App.approvePlan()">✓ Approve & Start Quest</button>
+        </div>
+
+        <div style="height:32px;"></div>
+      </div>
+    `;
+  }
+
   // ── Notification ──────────────────────────────────────────────────────────
 
   function renderNotif() {
@@ -1021,6 +1211,10 @@ const App = (() => {
     }
     if (currentPage === 'generating') {
       app.innerHTML = renderGenerating() + renderNotif();
+      return;
+    }
+    if (currentPage === 'plan-preview') {
+      app.innerHTML = renderPlanPreview() + renderNotif();
       return;
     }
 
@@ -1084,6 +1278,7 @@ const App = (() => {
 
   return {
     nav, clarNext, clarBack, clarSkip,
+    approvePlan, optimizePlan, backToQuestions,
     completeTask, expandTask, collapseTask, toggleStep,
     openNode, closeModal,
     useFreeze, resetAll,
