@@ -1093,9 +1093,8 @@ const Decompose = (() => {
 
   const TASKS_PER_NODE = 3;
 
-  function buildPlan(clarification) {
+  function assemblePlan(clarification, template) {
     const { goalText, deadline, hoursPerWeek, startDate = new Date().toISOString().split('T')[0] } = clarification;
-    const template = detectTemplate(goalText);
     const goalId = uid();
 
     const msPerWeek = 7 * 24 * 60 * 60 * 1000;
@@ -1195,6 +1194,25 @@ const Decompose = (() => {
     return { goal, milestones, tasks, nodes };
   }
 
+  function buildPlan(clarification) {
+    return assemblePlan(clarification, detectTemplate(clarification.goalText));
+  }
+
+  async function buildPlanAI(clarification) {
+    try {
+      const res = await fetch('https://goalquest-one.vercel.app/api/decompose', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clarification),
+      });
+      if (!res.ok) throw new Error('API error');
+      const { template } = await res.json();
+      return assemblePlan(clarification, template);
+    } catch {
+      return assemblePlan(clarification, detectTemplate(clarification.goalText));
+    }
+  }
+
   // ─── Daily Task Selection ────────────────────────────────────────────────────
   // Pick up to 5 tasks: 1 easy + 1–2 core + 1 stretch, balanced by availability
 
@@ -1276,7 +1294,7 @@ const Decompose = (() => {
   }
 
   return {
-    buildPlan, computeNodeStates, selectDailyTasks, getAdaptiveMode,
+    buildPlan, buildPlanAI, computeNodeStates, selectDailyTasks, getAdaptiveMode,
     getUpcomingTasks, getTodayTasks, getOverdueTasks, rescheduleTasks,
     addDays, WORLD_COLORS,
   };

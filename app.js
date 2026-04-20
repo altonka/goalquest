@@ -831,8 +831,7 @@ const App = (() => {
   function generatePlan() {
     currentPage = 'generating';
     render();
-    setTimeout(() => {
-      const { goal, milestones, tasks, nodes } = Decompose.buildPlan(clarData);
+    Decompose.buildPlanAI(clarData).then(({ goal, milestones, tasks, nodes }) => {
       State.set(s => ({
         ...s,
         goals: [...s.goals, goal],
@@ -844,7 +843,7 @@ const App = (() => {
       clarStep = 0; clarData = {};
       currentPage = 'home';
       showNotif(`🚀 ${milestones.length} worlds, ${nodes.length} nodes, ${tasks.length} tasks created!`);
-    }, 1200);
+    });
   }
 
   // ── Task Expansion ───────────────────────────────────────────────────────
@@ -990,7 +989,7 @@ const App = (() => {
         <div class="gen-inner">
           <div class="spinner"></div>
           <h2>Building your Quest...</h2>
-          <p>Mapping milestones · Clustering nodes · Scheduling tasks</p>
+          <p>AI is crafting your personalized plan · This takes a few seconds</p>
         </div>
       </div>
     `;
