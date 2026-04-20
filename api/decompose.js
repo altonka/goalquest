@@ -78,8 +78,9 @@ Requirements:
     );
 
     if (!geminiRes.ok) {
-      console.error('Gemini error:', await geminiRes.text());
-      return res.status(502).json({ error: 'AI service unavailable' });
+      const errText = await geminiRes.text();
+      console.error('Gemini error:', errText);
+      return res.status(502).json({ error: 'AI service unavailable', detail: errText.slice(0, 200) });
     }
 
     const data = await geminiRes.json();
