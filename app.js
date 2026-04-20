@@ -10,6 +10,13 @@ const App = (() => {
   let showWhyReminder = false;   // show "why you started" today
   const completedSteps = {};     // { taskId: Set<stepIndex> } — local, resets on complete
 
+  // ── Focus Mode State ──────────────────────────────────────────────────────
+  let focusTaskId = null;
+  let focusTimerInterval = null;
+  let focusRunning = false;
+  let focusDuration = 25;        // minutes (25 or 50)
+  let focusSecondsLeft = 25 * 60;
+
   // ── Navigation ───────────────────────────────────────────────────────────
 
   function nav(page) {
@@ -45,6 +52,38 @@ const App = (() => {
     el.textContent = '🌟 Perfect Day! +100 Bonus XP';
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 2600);
+  }
+
+  // ── Sidebar ───────────────────────────────────────────────────────────────
+
+  function renderSidebar(user) {
+    const li = Gamification.getLevelInfo(user.xp);
+    const items = [
+      { id: 'home',    icon: '🏠', label: 'Today' },
+      { id: 'map',     icon: '🗺️', label: 'Map' },
+      { id: 'profile', icon: '👤', label: 'Profile' },
+    ];
+    return `
+      <aside class="sidebar" role="navigation" aria-label="Main navigation">
+        <div class="sidebar-logo">Goal<span>Quest</span></div>
+        <nav class="sidebar-nav">
+          ${items.map(it => `
+            <button class="sidebar-item ${currentPage === it.id ? 'active' : ''}"
+              onclick="App.nav('${it.id}')" aria-current="${currentPage === it.id ? 'page' : 'false'}">
+              <span class="sidebar-item-icon">${it.icon}</span>
+              ${it.label}
+            </button>
+          `).join('')}
+        </nav>
+        <div class="sidebar-user">
+          <div class="sidebar-level">Lv.${user.level} · ${li.current.title}</div>
+          <div class="sidebar-xp-bar">
+            <div class="sidebar-xp-fill" style="width:${li.progress}%"></div>
+          </div>
+          <div class="sidebar-streak">🔥 ${user.streak}-day streak</div>
+        </div>
+      </aside>
+    `;
   }
 
   // ── Stats Strip ───────────────────────────────────────────────────────────
@@ -253,7 +292,6 @@ const App = (() => {
       const tf = { ...(s.user.taskFeedback || {}), [taskId]: rating };
       const recentRatings = Object.values(tf).slice(-5);
       const hardCount = recentRatings.filter(r => r === 'hard').length;
-      const easyCount = recentRatings.filter(r => r === 'easy').length;
       return {
         ...s,
         user: {
@@ -261,7 +299,6 @@ const App = (() => {
           taskFeedback: tf,
           consecutiveHard: rating === 'hard' ? (s.user.consecutiveHard || 0) + 1 : 0,
           consecutiveEasy: rating === 'easy' ? (s.user.consecutiveEasy || 0) + 1 : 0,
-          // Adaptive: if 3+ consecutive hard → mark reduced; 3+ easy → mark boosted
           totalTasksSkipped: hardCount >= 3
             ? (s.user.totalTasksSkipped || 0) + 1
             : s.user.totalTasksSkipped || 0,
@@ -389,13 +426,157 @@ const App = (() => {
 
         <!-- Actions -->
         <div class="tc-actions">
-          <button class="btn btn-ghost" onclick="App.collapseTask()">Collapse</button>
+          <button class="btn btn-ghost" onclick="App.startFocus('${task.id}')">⏱ Focus</button>
           <button class="btn btn-primary ${task.isBoss ? 'boss-complete-btn' : ''}"
             onclick="App.completeTask('${task.id}', event)">
             ${task.isBoss ? '⚔️ Complete Boss' : '✓ Mark Complete'}
           </button>
         </div>
       </div>`;
+  }
+
+  // ── Focus Mode ────────────────────────────────────────────────────────────
+
+  function formatTimer(seconds) {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function startFocus(taskId) {
+    focusTaskId = taskId;
+    focusDuration = 25;
+    focusSecondsLeft = 25 * 60;
+    focusRunning = false;
+    if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
+    currentPage = 'focus';
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function toggleFocusTimer() {
+    if (focusRunning) {
+      clearInterval(focusTimerInterval);
+      focusTimerInterval = null;
+      focusRunning = false;
+      render();
+    } else {
+      if (focusSecondsLeft <= 0) return;
+      focusRunning = true;
+      focusTimerInterval = setInterval(() => {
+        focusSecondsLeft--;
+        // Update timer display directly for performance
+        const disp = document.querySelector('.focus-timer-display');
+        if (disp) {
+          disp.textContent = formatTimer(focusSecondsLeft);
+          disp.className = 'focus-timer-display' + (focusSecondsLeft <= 0 ? ' done' : focusSecondsLeft <= 60 ? ' warning' : '');
+        }
+        if (focusSecondsLeft <= 0) {
+          clearInterval(focusTimerInterval);
+          focusTimerInterval = null;
+          focusRunning = false;
+          render();
+        }
+      }, 1000);
+      render();
+    }
+  }
+
+  function setFocusDuration(mins) {
+    focusDuration = mins;
+    focusSecondsLeft = mins * 60;
+    focusRunning = false;
+    if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
+    render();
+  }
+
+  function resetFocusTimer() {
+    focusSecondsLeft = focusDuration * 60;
+    focusRunning = false;
+    if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
+    render();
+  }
+
+  function exitFocus() {
+    if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
+    focusRunning = false;
+    focusTaskId = null;
+    currentPage = 'home';
+    render();
+  }
+
+  function renderFocusMode() {
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === focusTaskId);
+    if (!task) { exitFocus(); return ''; }
+
+    const steps = task.steps || [];
+    const doneSteps = completedSteps[task.id] || new Set();
+    const doneCount = steps.filter((_, i) => doneSteps.has(i)).length;
+    const timerDone = focusSecondsLeft <= 0;
+    const timerClass = timerDone ? 'done' : (focusSecondsLeft <= 60 && focusRunning ? 'warning' : '');
+    const startedTimer = focusSecondsLeft < focusDuration * 60;
+
+    return `
+      <div class="focus-page">
+        <div class="focus-header">
+          <button class="focus-exit" onclick="App.exitFocus()">← Exit</button>
+          ${steps.length ? `<span class="focus-progress-text">${doneCount}/${steps.length} steps</span>` : ''}
+        </div>
+
+        <div class="focus-body">
+          <div class="focus-task-title">${task.title}</div>
+
+          <!-- Timer -->
+          <div class="focus-timer-block">
+            <div class="timer-duration-toggle">
+              <button class="timer-dur-btn ${focusDuration === 25 ? 'active' : ''}" onclick="App.setFocusDuration(25)">25 min</button>
+              <button class="timer-dur-btn ${focusDuration === 50 ? 'active' : ''}" onclick="App.setFocusDuration(50)">50 min</button>
+            </div>
+            <div class="focus-timer-display ${timerClass}">${formatTimer(focusSecondsLeft)}</div>
+            <div class="focus-timer-controls">
+              <button class="focus-timer-btn ${focusRunning ? 'btn-timer-pause' : 'btn-timer-start'}"
+                onclick="App.toggleFocusTimer()">
+                ${timerDone ? '✓ Done!' : focusRunning ? '⏸ Pause' : startedTimer ? '▶ Resume' : '▶ Start'}
+              </button>
+              ${startedTimer && !timerDone ? `<button class="btn-timer-reset" onclick="App.resetFocusTimer()">↺ Reset</button>` : ''}
+            </div>
+            ${timerDone ? `<div class="focus-timer-done-msg">Session complete! ✓</div>` : ''}
+          </div>
+
+          <!-- Start trigger -->
+          ${task.startTrigger ? `
+          <div class="focus-trigger">
+            <span class="focus-trigger-label">👉 Start with</span>
+            ${task.startTrigger}
+          </div>
+          ` : ''}
+
+          <!-- Steps -->
+          ${steps.length ? `
+          <div>
+            <div class="focus-section-label">Steps</div>
+            <div class="focus-steps">
+              ${steps.map((step, i) => `
+                <div class="focus-step ${doneSteps.has(i) ? 'checked' : ''}" onclick="App.toggleStep('${task.id}', ${i})">
+                  <span class="focus-step-check">${doneSteps.has(i) ? '✓' : ''}</span>
+                  <span class="focus-step-text">${step}</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+        </div>
+
+        <div class="focus-footer">
+          <button class="focus-complete-btn ${task.isBoss ? 'boss-btn' : ''}"
+            onclick="App.completeTask('${task.id}', event)">
+            ${task.isBoss ? '⚔️ Complete Boss' : '✓ Mark Complete'}
+          </button>
+          <div class="focus-keyboard-hint">Space to pause · Esc to exit</div>
+        </div>
+      </div>
+    `;
   }
 
   // ── Progress Map ──────────────────────────────────────────────────────────
@@ -483,7 +664,6 @@ const App = (() => {
   function renderNodeModal(node, tasks, user) {
     if (!node) return '';
     const nodeTasks = tasks.filter(t => node.taskIds.includes(t.id));
-    const mult = Gamification.getMomentumMultiplier(user.streak);
     return `
       <div class="node-modal-overlay" onclick="App.closeModal(event)">
         <div class="node-modal">
@@ -700,8 +880,17 @@ const App = (() => {
 
     const clientY = event ? event.clientY : 180;
 
+    // Exit focus mode if completing the focused task
+    if (focusTaskId === taskId) {
+      if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
+      focusRunning = false;
+      focusTaskId = null;
+      currentPage = 'home';
+    }
+
     const updatedTasks = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done' } : t);
-    const { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus } = Gamification.completeTask(s.user, task, updatedTasks, s.milestones);
+    const result = Gamification.completeTask(s.user, task, updatedTasks, s.milestones);
+    let { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus } = result;
 
     const updatedMilestones = s.milestones.map(m => ({
       ...m, progress: Gamification.getMilestoneProgress(m.id, updatedTasks),
@@ -818,14 +1007,37 @@ const App = (() => {
 
   function render() {
     const app = document.getElementById('app');
-    let html = '';
-    if      (currentPage === 'home')       html = renderHome();
-    else if (currentPage === 'map')        html = renderMap();
-    else if (currentPage === 'profile')    html = renderProfile();
-    else if (currentPage === 'new-goal')   html = renderNewGoal();
-    else if (currentPage === 'generating') html = renderGenerating();
-    else html = renderHome();
-    app.innerHTML = html + renderNotif();
+    const s = State.get();
+
+    // Focus mode — full screen, no shell
+    if (currentPage === 'focus') {
+      app.innerHTML = renderFocusMode() + renderNotif();
+      return;
+    }
+
+    // Full-screen wizard pages — no sidebar
+    if (currentPage === 'new-goal') {
+      app.innerHTML = renderNewGoal() + renderNotif();
+      return;
+    }
+    if (currentPage === 'generating') {
+      app.innerHTML = renderGenerating() + renderNotif();
+      return;
+    }
+
+    // Main pages — sidebar shell
+    let pageHtml = '';
+    if      (currentPage === 'home')    pageHtml = renderHome();
+    else if (currentPage === 'map')     pageHtml = renderMap();
+    else if (currentPage === 'profile') pageHtml = renderProfile();
+    else pageHtml = renderHome();
+
+    app.innerHTML = `
+      <div class="app-shell">
+        ${renderSidebar(s.user)}
+        <div class="main-content">${pageHtml}</div>
+      </div>
+    ` + renderNotif();
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -845,20 +1057,39 @@ const App = (() => {
       const daysAway = Gamification.daysSinceActive(s.user);
       if (daysAway >= 2) {
         comebackMode = true;
-        // Increment comeback count
         State.set(st => ({ ...st, user: { ...st.user, comebackCount: (st.user.comebackCount || 0) + 1 } }));
       }
     }
 
-    // Why reminder: show every 3rd day or on return
+    // Why reminder: show every 3rd task or on return
     const totalDone = s.user.totalTasksDone || 0;
     if (totalDone > 0 && totalDone % 3 === 0) showWhyReminder = true;
     if (comebackMode) showWhyReminder = true;
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (currentPage === 'focus') {
+        if (e.code === 'Space' && e.target === document.body) {
+          e.preventDefault();
+          toggleFocusTimer();
+        } else if (e.code === 'Escape') {
+          exitFocus();
+        }
+      }
+    });
 
     render();
   }
 
   init();
 
-  return { nav, clarNext, clarBack, clarSkip, completeTask, expandTask, collapseTask, toggleStep, openNode, closeModal, useFreeze, resetAll, dismissComeback, dismissWhy, submitReflection, closeReflection };
+  return {
+    nav, clarNext, clarBack, clarSkip,
+    completeTask, expandTask, collapseTask, toggleStep,
+    openNode, closeModal,
+    useFreeze, resetAll,
+    dismissComeback, dismissWhy,
+    submitReflection, closeReflection,
+    startFocus, exitFocus, toggleFocusTimer, resetFocusTimer, setFocusDuration,
+  };
 })();
