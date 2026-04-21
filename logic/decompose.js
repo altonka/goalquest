@@ -1200,7 +1200,7 @@ const Decompose = (() => {
 
   async function buildPlanAI(clarification) {
     try {
-      const res = await fetch('https://goalquest-one.vercel.app/api/decompose', {
+      const res = await fetch('/api/decompose', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(clarification),
@@ -1209,7 +1209,8 @@ const Decompose = (() => {
       const { template } = await res.json();
       return assemblePlan(clarification, template);
     } catch {
-      return assemblePlan(clarification, detectTemplate(clarification.goalText));
+      const plan = assemblePlan(clarification, detectTemplate(clarification.goalText));
+      return { ...plan, _usedFallback: true };
     }
   }
 

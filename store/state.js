@@ -6,6 +6,7 @@ const State = (() => {
     milestones: [],
     nodes: [],
     tasks: [],
+    stepProgress: {},           // { taskId: [stepIndex, ...] } — persisted step checks
     user: {
       xp: 0,
       level: 1,
@@ -21,6 +22,7 @@ const State = (() => {
       consecutiveHard: 0,       // consecutive "too hard" feedbacks
       consecutiveEasy: 0,       // consecutive "too easy" feedbacks
       comebackCount: 0,         // times returned after breaking streak
+      lastComebackDate: null,   // YYYY-MM-DD — prevents repeat comeback screen same day
       goalIdentity: '',         // e.g. "a consultant"
     },
     currentGoalId: null,
@@ -36,6 +38,7 @@ const State = (() => {
       if (!saved.user.activeHistory) saved.user.activeHistory = [];
       if (!saved.user.taskFeedback) saved.user.taskFeedback = {};
       if (!saved.nodes) saved.nodes = [];
+      if (!saved.stepProgress) saved.stepProgress = {};
       return saved;
     } catch { return { ...defaults }; }
   }

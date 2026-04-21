@@ -1,3 +1,8 @@
+// Escape user/AI content before inserting into innerHTML
+function h(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 const App = (() => {
   let currentPage = 'home';
   let notification = null;
@@ -10,7 +15,7 @@ const App = (() => {
   let comebackMode = false;      // user returned after missing days
   let showReflection = null;     // taskId awaiting difficulty feedback
   let showWhyReminder = false;   // show "why you started" today
-  const completedSteps = {};     // { taskId: Set<stepIndex> } — local, resets on complete
+  // completedSteps removed — now persisted in State.stepProgress
 
   // ── Focus Mode State ──────────────────────────────────────────────────────
   let focusTaskId = null;
@@ -42,8 +47,7 @@ const App = (() => {
     el.className = 'xp-popup' + (isBoss ? ' boss-pop' : '');
     const multStr = multiplier > 1 ? `<span class="mult-badge">×${multiplier}</span>` : '';
     el.innerHTML = `+${xp} XP${multStr}`;
-    el.style.left = '50%';
-    el.style.top = (clientY ? clientY - 30 : 180) + 'px';
+    el.style.setProperty('--pop-y', `${clientY ? clientY - 30 : 180}px`);
     document.body.appendChild(el);
     setTimeout(() => el.remove(), 1200);
   }
@@ -61,9 +65,9 @@ const App = (() => {
   function renderSidebar(user) {
     const li = Gamification.getLevelInfo(user.xp);
     const items = [
-      { id: 'home',    icon: '🏠', label: 'Today' },
-      { id: 'map',     icon: '🗺️', label: 'Map' },
-      { id: 'profile', icon: '👤', label: 'Profile' },
+      { id: 'home',    icon: 'home', label: 'Today' },
+      { id: 'map',     icon: 'map',  label: 'Map' },
+      { id: 'profile', icon: 'user', label: 'Profile' },
     ];
     return `
       <aside class="sidebar" role="navigation" aria-label="Main navigation">
@@ -72,13 +76,13 @@ const App = (() => {
           ${items.map(it => `
             <button class="sidebar-item ${currentPage === it.id ? 'active' : ''}"
               onclick="App.nav('${it.id}')" aria-current="${currentPage === it.id ? 'page' : 'false'}">
-              <span class="sidebar-item-icon">${it.icon}</span>
+              <span class="sidebar-item-icon"><i data-lucide="${it.icon}"></i></span>
               ${it.label}
             </button>
           `).join('')}
         </nav>
         <div class="sidebar-user">
-          <div class="sidebar-level">Lv.${user.level} · ${li.current.title}</div>
+          <div class="sidebar-level">Lv.${user.level} · ${h(li.current.title)}</div>
           <div class="sidebar-xp-bar">
             <div class="sidebar-xp-fill" style="width:${li.progress}%"></div>
           </div>
@@ -179,6 +183,9 @@ const App = (() => {
     // Comeback check
     if (comebackMode) return renderComeback(goal, allTasks, Gamification.daysSinceActive(s.user));
 
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
     const adaptiveMode = Decompose.getAdaptiveMode(s.user);
     const dailyTasks = Decompose.selectDailyTasks(allTasks, goal.hoursPerWeek);
     const doneTasks = dailyTasks.filter(t => t.status === 'done');
@@ -191,9 +198,10 @@ const App = (() => {
 
     return `
       <div class="page">
-        <div style="margin-bottom:16px;padding-top:4px;">
-          <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted2);margin-bottom:2px;">Active Quest</div>
-          <div style="font-size:0.9rem;font-weight:700;color:var(--text);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${goal.title}</div>
+        <div class="quest-header">
+          <div class="home-greeting">${greeting}</div>
+          <div class="quest-label">Active Quest</div>
+          <div class="quest-title">${h(goal.title)}</div>
         </div>
 
         ${renderStatsStrip(s.user)}
@@ -210,7 +218,7 @@ const App = (() => {
         ${showWhyReminder && goal.successCriteria ? `
         <div class="why-reminder">
           <div class="why-label">💭 Remember why you started</div>
-          <div class="why-text">${goal.successCriteria}</div>
+          <div class="why-text">${h(goal.successCriteria)}</div>
           <button class="why-dismiss" onclick="App.dismissWhy()">Got it ✓</button>
         </div>
         ` : ''}
@@ -322,7 +330,6 @@ const App = (() => {
     const effectiveXP = Math.round(task.xpReward * mult);
     const isDone = task.status === 'done';
     const isExpanded = expandedTaskId === task.id;
-    const diffColor = { easy: 'var(--success)', core: 'var(--accent)', stretch: 'var(--danger)' }[task.difficulty] || 'var(--accent)';
 
     if (isDone) {
       return `
@@ -341,10 +348,8 @@ const App = (() => {
         <div class="task-card ${task.isBoss ? 'boss' : 'normal'}" id="tc-${task.id}">
           <div class="tc-collapsed">
             <div class="tc-top-row">
-              <span class="tc-diff-badge" style="background:${diffColor}20;color:${diffColor};border-color:${diffColor}40;">
-                ${task.difficulty}
-              </span>
-              <span class="tc-title-collapsed">${task.title}</span>
+              <span class="tc-diff-badge diff-${task.difficulty}">${task.difficulty}</span>
+              <span class="tc-title-collapsed">${h(task.title)}</span>
               ${task.isBoss ? '<span class="meta-pill boss-xp">⚔️ Boss</span>' : ''}
             </div>
             <div class="tc-bottom-row">
@@ -358,7 +363,7 @@ const App = (() => {
 
     // ── EXPANDED ──
     const steps = task.steps || [];
-    const doneSteps = completedSteps[task.id] || new Set();
+    const doneSteps = new Set(State.get().stepProgress?.[task.id] || []);
 
     return `
       <div class="task-card ${task.isBoss ? 'boss' : 'normal'} expanded" id="tc-${task.id}">
@@ -366,8 +371,8 @@ const App = (() => {
         <!-- Header -->
         <div class="tc-exp-header">
           <div>
-            <span class="tc-diff-badge" style="background:${diffColor}20;color:${diffColor};border-color:${diffColor}40;">${task.difficulty}</span>
-            <div class="tc-exp-title">${task.title}</div>
+            <span class="tc-diff-badge diff-${task.difficulty}">${task.difficulty}</span>
+            <div class="tc-exp-title">${h(task.title)}</div>
             <div class="tc-exp-meta">⏱ ${task.estimatedMinutes} min · +${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</div>
           </div>
           <button class="tc-collapse-btn" onclick="App.collapseTask()">✕</button>
@@ -376,7 +381,7 @@ const App = (() => {
         <!-- Start trigger -->
         <div class="tc-start-trigger">
           <span class="tc-trigger-label">👉 Start with</span>
-          <span class="tc-trigger-text">${task.startTrigger || 'Open your materials and begin immediately'}</span>
+          <span class="tc-trigger-text">${h(task.startTrigger || 'Open your materials and begin immediately')}</span>
         </div>
 
         <!-- Steps -->
@@ -386,7 +391,7 @@ const App = (() => {
           ${steps.map((step, i) => `
             <label class="tc-step ${doneSteps.has(i) ? 'checked' : ''}" onclick="App.toggleStep('${task.id}', ${i})">
               <span class="tc-step-check">${doneSteps.has(i) ? '✓' : ''}</span>
-              <span class="tc-step-text">${step}</span>
+              <span class="tc-step-text">${h(step)}</span>
             </label>
           `).join('')}
         </div>
@@ -395,14 +400,14 @@ const App = (() => {
         <!-- Done when -->
         <div class="tc-done-when">
           <span class="tc-done-label">✅ Done when</span>
-          <span class="tc-done-text">${task.completionCondition || 'Task is fully completed'}</span>
+          <span class="tc-done-text">${h(task.completionCondition || 'Task is fully completed')}</span>
         </div>
 
         <!-- Focus tip -->
         ${task.focusTip ? `
         <div class="tc-focus-tip">
           <span class="tc-focus-icon">⏱</span>
-          <span>${task.focusTip}</span>
+          <span>${h(task.focusTip)}</span>
         </div>
         ` : ''}
 
@@ -411,8 +416,8 @@ const App = (() => {
         <div class="tc-resources">
           <div class="tc-section-label">🔗 Resources</div>
           ${task.resources.map(r => `
-            <a class="tc-resource ${r.primary ? 'primary' : ''}" href="${r.url || '#'}" target="_blank" rel="noopener">
-              ${r.primary ? '★ ' : ''}${r.label}
+            <a class="tc-resource ${r.primary ? 'primary' : ''}" href="${h(r.url || '#')}" target="_blank" rel="noopener noreferrer">
+              ${r.primary ? '★ ' : ''}${h(r.label)}
             </a>
           `).join('')}
         </div>
@@ -422,7 +427,7 @@ const App = (() => {
         ${task.community ? `
         <div class="tc-community">
           <span class="tc-community-icon">💬</span>
-          <span>${task.community}</span>
+          <span>${h(task.community)}</span>
         </div>
         ` : ''}
 
@@ -513,7 +518,7 @@ const App = (() => {
     if (!task) { exitFocus(); return ''; }
 
     const steps = task.steps || [];
-    const doneSteps = completedSteps[task.id] || new Set();
+    const doneSteps = new Set(State.get().stepProgress?.[task.id] || []);
     const doneCount = steps.filter((_, i) => doneSteps.has(i)).length;
     const timerDone = focusSecondsLeft <= 0;
     const timerClass = timerDone ? 'done' : (focusSecondsLeft <= 60 && focusRunning ? 'warning' : '');
@@ -527,7 +532,7 @@ const App = (() => {
         </div>
 
         <div class="focus-body">
-          <div class="focus-task-title">${task.title}</div>
+          <div class="focus-task-title">${h(task.title)}</div>
 
           <!-- Timer -->
           <div class="focus-timer-block">
@@ -550,7 +555,7 @@ const App = (() => {
           ${task.startTrigger ? `
           <div class="focus-trigger">
             <span class="focus-trigger-label">👉 Start with</span>
-            ${task.startTrigger}
+            ${h(task.startTrigger)}
           </div>
           ` : ''}
 
@@ -562,7 +567,7 @@ const App = (() => {
               ${steps.map((step, i) => `
                 <div class="focus-step ${doneSteps.has(i) ? 'checked' : ''}" onclick="App.toggleStep('${task.id}', ${i})">
                   <span class="focus-step-check">${doneSteps.has(i) ? '✓' : ''}</span>
-                  <span class="focus-step-text">${step}</span>
+                  <span class="focus-step-text">${h(step)}</span>
                 </div>
               `).join('')}
             </div>
@@ -609,9 +614,9 @@ const App = (() => {
 
       return `
         <div class="map-world">
-          <div class="world-banner" style="background:${ms.color}22;border:1px solid ${ms.color}44;">
+          <div class="world-banner" style="--ms-color:${ms.color}">
             <div class="world-banner-dot" style="background:${ms.color}"></div>
-            <span style="color:${ms.color}">World ${mi+1}: ${ms.title}</span>
+            <span style="color:${ms.color}">World ${mi+1}: ${h(ms.title)}</span>
             <span class="world-progress-text" style="color:${ms.color}">${msPct}%</span>
           </div>
           ${nodesHtml}
@@ -644,7 +649,7 @@ const App = (() => {
     const stateClass = node.state;
     const isBoss = node.isBoss;
     const icon = stateClass === 'complete' ? '✓'
-      : stateClass === 'locked' ? '🔒'
+      : stateClass === 'locked' ? '<i data-lucide="lock"></i>'
       : isBoss ? '⚔️'
       : node.globalIndex + 1;
 
@@ -657,7 +662,7 @@ const App = (() => {
             ${stateClass === 'partial' ? `<div class="node-partial-ring"></div>` : ''}
             ${icon}
           </div>
-          <div class="node-label">${node.title.replace('⚔️ ', '')}</div>
+          <div class="node-label">${h(node.title.replace('⚔️ ', ''))}</div>
         </div>
       </div>
     `;
@@ -671,7 +676,7 @@ const App = (() => {
         <div class="node-modal">
           <div class="node-modal-header">
             <div>
-              <div class="node-modal-title">${node.title}</div>
+              <div class="node-modal-title">${h(node.title)}</div>
               <div style="font-size:0.75rem;color:var(--muted);margin-top:3px;">${nodeTasks.filter(t=>t.status==='done').length}/${nodeTasks.length} complete</div>
             </div>
             <button class="node-modal-close" onclick="App.closeModal()">×</button>
@@ -763,6 +768,14 @@ const App = (() => {
           </div>
         </div>
 
+        <div class="data-zone">
+          <h4>💾 Data</h4>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost" onclick="App.exportData()">Export Backup</button>
+            <button class="btn btn-ghost" onclick="App.importData()">Import Backup</button>
+          </div>
+        </div>
+
         <div class="danger-zone">
           <h4>⚠️ Danger Zone</h4>
           <button class="btn-danger" onclick="App.resetAll()">Reset All Data</button>
@@ -812,7 +825,7 @@ const App = (() => {
             </div>
           </div>
           <div class="clar-preview">
-            ${Object.entries(clarData).map(([k,v]) => `<span class="preview-tag"><b>${k}:</b> ${v}</span>`).join('')}
+            ${Object.entries(clarData).map(([k,v]) => `<span class="preview-tag"><b>${h(k)}:</b> ${h(v)}</span>`).join('')}
           </div>
         </div>
       </div>
@@ -886,15 +899,16 @@ const App = (() => {
   }
 
   function collapseTask() {
+    const scrollY = window.scrollY;
     expandedTaskId = null;
     render();
+    window.scrollTo(0, scrollY);
   }
 
   function toggleStep(taskId, stepIndex) {
-    if (!completedSteps[taskId]) completedSteps[taskId] = new Set();
-    completedSteps[taskId].has(stepIndex)
-      ? completedSteps[taskId].delete(stepIndex)
-      : completedSteps[taskId].add(stepIndex);
+    const current = new Set(State.get().stepProgress?.[taskId] || []);
+    current.has(stepIndex) ? current.delete(stepIndex) : current.add(stepIndex);
+    State.set(st => ({ ...st, stepProgress: { ...st.stepProgress, [taskId]: [...current] } }));
     render();
   }
 
@@ -915,7 +929,7 @@ const App = (() => {
       currentPage = 'home';
     }
 
-    const updatedTasks = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done' } : t);
+    const updatedTasks = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done', completedAt: new Date().toISOString() } : t);
     const result = Gamification.completeTask(s.user, task, updatedTasks, s.milestones);
     let { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus } = result;
 
@@ -931,11 +945,10 @@ const App = (() => {
     // If this was a comeback task, reset comeback mode
     if (comebackMode) { comebackMode = false; }
 
-    State.set({ tasks: updatedTasks, user, milestones: updatedMilestones });
+    State.set(st => ({ ...st, tasks: updatedTasks, user, milestones: updatedMilestones, stepProgress: { ...st.stepProgress, [taskId]: [] } }));
 
-    // Collapse and clear steps
+    // Collapse
     expandedTaskId = null;
-    delete completedSteps[taskId];
 
     // Flash the card
     const card = document.getElementById(`tc-${taskId}`);
@@ -957,6 +970,43 @@ const App = (() => {
 
     // Show difficulty reflection after XP animation
     setTimeout(() => { showReflection = taskId; render(); }, 1400);
+  }
+
+  // ── Data Export / Import ──────────────────────────────────────────────────
+
+  function exportData() {
+    const data = JSON.stringify(State.get(), null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `goalquest-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importData() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.target.result);
+          if (!parsed.goals || !parsed.tasks) throw new Error('Invalid format');
+          State.set(parsed);
+          showNotif('✓ Data imported successfully');
+          render();
+        } catch {
+          showNotif('Failed to import — invalid file', 'error');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   }
 
   // ── Streak Freeze ─────────────────────────────────────────────────────────
@@ -993,15 +1043,15 @@ const App = (() => {
 
   function renderBottomNav() {
     const items = [
-      { id: 'home',    icon: '🏠', label: 'Today' },
-      { id: 'map',     icon: '🗺️', label: 'Map' },
-      { id: 'profile', icon: '👤', label: 'Profile' },
+      { id: 'home',    icon: 'home', label: 'Today' },
+      { id: 'map',     icon: 'map',  label: 'Map' },
+      { id: 'profile', icon: 'user', label: 'Profile' },
     ];
     return `
       <nav class="bottom-nav">
         ${items.map(it => `
           <button class="nav-item ${currentPage === it.id ? 'active' : ''}" onclick="App.nav('${it.id}')">
-            <span class="nav-item-icon">${it.icon}</span>
+            <span class="nav-item-icon"><i data-lucide="${it.icon}"></i></span>
             <span class="nav-item-label">${it.label}</span>
           </button>
         `).join('')}
@@ -1076,10 +1126,16 @@ const App = (() => {
           <button class="btn btn-primary" onclick="App.approvePlan()">Approve →</button>
         </div>
 
+        ${draftPlan._usedFallback ? `
+        <div class="fallback-notice">
+          <span>⚠️ AI unavailable — using a general template.</span>
+          <button onclick="App.generatePlan()">Retry with AI</button>
+        </div>` : ''}
+
         <div class="preview-section">
           <div class="preview-section-label">YOUR GOAL</div>
           <div class="preview-goal-card">
-            <div class="preview-goal-title">${goal.title}</div>
+            <div class="preview-goal-title">${h(goal.title)}</div>
             <div class="preview-goal-meta">
               <span>📅 ${fmtDate(goal.deadline)}</span>
               <span>⏱ ${goal.hoursPerWeek} hrs/week</span>
@@ -1099,10 +1155,10 @@ const App = (() => {
             <div class="preview-milestone" style="border-left:3px solid ${m.color};">
               <div class="pm-top">
                 <span class="pm-world" style="color:${m.color};">World ${i + 1}</span>
-                <span class="pm-title">${m.title}</span>
+                <span class="pm-title">${h(m.title)}</span>
                 <span class="pm-date">${fmtDateShort(m.deadline)}</span>
               </div>
-              <div class="pm-desc">${m.desc}</div>
+              <div class="pm-desc">${h(m.desc)}</div>
             </div>
           `).join('')}
         </div>
@@ -1141,15 +1197,15 @@ const App = (() => {
               <div class="preview-task-card">
                 <div class="ptc-top">
                   <span class="ptc-diff" style="background:${db};color:${dc};">${t.difficulty}</span>
-                  <span class="ptc-title">${t.title}</span>
+                  <span class="ptc-title">${h(t.title)}</span>
                   <span class="ptc-time">⏱ ${t.estimatedMinutes}m</span>
                 </div>
-                ${t.startTrigger ? `<div class="ptc-trigger">👉 ${t.startTrigger}</div>` : ''}
+                ${t.startTrigger ? `<div class="ptc-trigger">👉 ${h(t.startTrigger)}</div>` : ''}
                 ${t.steps && t.steps.length ? `
                   <ul class="ptc-steps">
-                    ${t.steps.slice(0, 3).map(s => `<li>${s}</li>`).join('')}
+                    ${t.steps.slice(0, 3).map(s => `<li>${h(s)}</li>`).join('')}
                   </ul>` : ''}
-                ${t.completionCondition ? `<div class="ptc-done">✅ ${t.completionCondition}</div>` : ''}
+                ${t.completionCondition ? `<div class="ptc-done">✅ ${h(t.completionCondition)}</div>` : ''}
               </div>`;
           }).join('')}
         </div>
@@ -1159,8 +1215,8 @@ const App = (() => {
           <div class="preview-section-label">KEY RESOURCES</div>
           <div class="preview-resources">
             ${keyResources.map(r => `
-              <a class="preview-resource" href="${r.url || '#'}" target="_blank" rel="noopener">
-                🔗 ${r.label}
+              <a class="preview-resource" href="${h(r.url || '#')}" target="_blank" rel="noopener noreferrer">
+                🔗 ${h(r.label)}
               </a>`).join('')}
           </div>
         </div>` : ''}
@@ -1198,39 +1254,30 @@ const App = (() => {
     const app = document.getElementById('app');
     const s = State.get();
 
-    // Focus mode — full screen, no shell
     if (currentPage === 'focus') {
       app.innerHTML = renderFocusMode() + renderNotif();
-      return;
-    }
-
-    // Full-screen wizard pages — no sidebar
-    if (currentPage === 'new-goal') {
+    } else if (currentPage === 'new-goal') {
       app.innerHTML = renderNewGoal() + renderNotif();
-      return;
-    }
-    if (currentPage === 'generating') {
+    } else if (currentPage === 'generating') {
       app.innerHTML = renderGenerating() + renderNotif();
-      return;
-    }
-    if (currentPage === 'plan-preview') {
+    } else if (currentPage === 'plan-preview') {
       app.innerHTML = renderPlanPreview() + renderNotif();
-      return;
+    } else {
+      let pageHtml = '';
+      if      (currentPage === 'home')    pageHtml = renderHome();
+      else if (currentPage === 'map')     pageHtml = renderMap();
+      else if (currentPage === 'profile') pageHtml = renderProfile();
+      else pageHtml = renderHome();
+
+      app.innerHTML = `
+        <div class="app-shell">
+          ${renderSidebar(s.user)}
+          <div class="main-content">${pageHtml}</div>
+        </div>
+      ` + renderNotif();
     }
 
-    // Main pages — sidebar shell
-    let pageHtml = '';
-    if      (currentPage === 'home')    pageHtml = renderHome();
-    else if (currentPage === 'map')     pageHtml = renderMap();
-    else if (currentPage === 'profile') pageHtml = renderProfile();
-    else pageHtml = renderHome();
-
-    app.innerHTML = `
-      <div class="app-shell">
-        ${renderSidebar(s.user)}
-        <div class="main-content">${pageHtml}</div>
-      </div>
-    ` + renderNotif();
+    if (typeof lucide !== 'undefined') lucide.createIcons();
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -1245,12 +1292,13 @@ const App = (() => {
     // Auto-reschedule overdue
     autoReschedule();
 
-    // Comeback detection: away 2+ days → show comeback screen
+    // Comeback detection: away 2+ days → show comeback screen (once per calendar day)
     if (s.goals.length) {
       const daysAway = Gamification.daysSinceActive(s.user);
-      if (daysAway >= 2) {
+      const today = new Date().toISOString().split('T')[0];
+      if (daysAway >= 2 && s.user.lastComebackDate !== today) {
         comebackMode = true;
-        State.set(st => ({ ...st, user: { ...st.user, comebackCount: (st.user.comebackCount || 0) + 1 } }));
+        State.set(st => ({ ...st, user: { ...st.user, comebackCount: (st.user.comebackCount || 0) + 1, lastComebackDate: today } }));
       }
     }
 
@@ -1278,10 +1326,11 @@ const App = (() => {
 
   return {
     nav, clarNext, clarBack, clarSkip,
-    approvePlan, optimizePlan, backToQuestions,
+    generatePlan, approvePlan, optimizePlan, backToQuestions,
     completeTask, expandTask, collapseTask, toggleStep,
     openNode, closeModal,
     useFreeze, resetAll,
+    exportData, importData,
     dismissComeback, dismissWhy,
     submitReflection, closeReflection,
     startFocus, exitFocus, toggleFocusTimer, resetFocusTimer, setFocusDuration,
