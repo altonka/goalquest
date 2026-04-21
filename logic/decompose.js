@@ -1074,8 +1074,10 @@ const Decompose = (() => {
   function detectTemplate(goalText) {
     const g = goalText.toLowerCase();
     if (/consult|mbb|mckinsey|bain|bcg|strategy|case interview/.test(g)) return TEMPLATES.consultant;
-    if (/fit|gym|weight|muscle|run|marathon|health|diet|bulk|cut/.test(g)) return TEMPLATES.fitness;
-    if (/startup|company|product|saas|app|launch|mvp|founder/.test(g)) return TEMPLATES.startup;
+    // Check startup before fitness to avoid "run a company" → fitness via /run/
+    if (/startup|found(er|ing)|launch.*product|build.*app|saas|mvp|\bbusiness\b|\bcompany\b|\bproduct\b/.test(g)) return TEMPLATES.startup;
+    // Word boundaries on ambiguous words: "run" (not "run a company"), "cut" (not "budget cut"), "fit" (not "outfit")
+    if (/\bgym\b|weight loss|lose weight|muscle|marathon|\bworkout\b|\btraining\b|get fit|stay fit|\bbulk\b|body fat|meal prep|calorie/.test(g) || /\brun\b.*(5k|10k|km|mile|faster|marathon)/.test(g)) return TEMPLATES.fitness;
     return TEMPLATES.default;
   }
 
@@ -1141,12 +1143,16 @@ const Decompose = (() => {
       for (let w = 0; w < mWeeks; w++) {
         const tmpl = taskTemplates[w % taskTemplates.length];
         const deadline = addDays(cursor, w * 7 + 2);
+        // Avoid duplicate titles when cycling past the template set
+        const isRepeat = w >= taskTemplates.length;
+        const round = Math.floor(w / taskTemplates.length) + 1;
+        const taskTitle = isRepeat ? `${tmpl.title} — Round ${round}` : tmpl.title;
         tasks.push({
           id: uid(),
           milestoneId,
           goalId,
           // Rich fields from template
-          title: tmpl.title,
+          title: taskTitle,
           estimatedMinutes: tmpl.estimatedMinutes,
           difficulty: tmpl.difficulty || 'core',
           startTrigger: tmpl.startTrigger,
@@ -1223,18 +1229,38 @@ const Decompose = (() => {
       .sort((a, b) => a.deadline.localeCompare(b.deadline));
 
     const dailyMinutes = Math.round((hoursPerWeek || 10) * 60 / 7);
-    const MAX_TASKS = dailyMinutes > 90 ? 5 : dailyMinutes > 45 ? 3 : 2;
+    // Allow 25% overrun so user can finish a started task; floor at 25 min so at least 1 task is always shown
+    const budget = Math.max(dailyMinutes * 1.25, 25);
 
-    const easy    = available.filter(t => t.difficulty === 'easy').slice(0, 1);
-    const core    = available.filter(t => t.difficulty === 'core').slice(0, 2);
-    const stretch = available.filter(t => t.difficulty === 'stretch').slice(0, 1);
+    const easy    = available.filter(t => t.difficulty === 'easy');
+    const core    = available.filter(t => t.difficulty === 'core');
+    const stretch = available.filter(t => t.difficulty === 'stretch');
 
-    const picked = [...easy, ...core, ...stretch].slice(0, MAX_TASKS);
-    // If not enough variety, fill with any available
-    if (picked.length < MAX_TASKS) {
-      const rest = available.filter(t => !picked.find(p => p.id === t.id));
-      return [...picked, ...rest].slice(0, MAX_TASKS);
+    const picked = [];
+    let minutesUsed = 0;
+
+    function tryAdd(t) {
+      if (picked.find(p => p.id === t.id)) return false;
+      if (minutesUsed + t.estimatedMinutes <= budget) {
+        picked.push(t);
+        minutesUsed += t.estimatedMinutes;
+        return true;
+      }
+      return false;
     }
+
+    // Pick 1 easy first (quick win), then up to 2 core, then 1 stretch
+    for (const t of easy.slice(0, 1)) tryAdd(t);
+    let coreCount = 0;
+    for (const t of core) { if (coreCount >= 2) break; if (tryAdd(t)) coreCount++; }
+    for (const t of stretch.slice(0, 1)) tryAdd(t);
+
+    // If nothing fit within budget, show the single shortest available task
+    if (picked.length === 0 && available.length > 0) {
+      const shortest = [...available].sort((a, b) => a.estimatedMinutes - b.estimatedMinutes)[0];
+      picked.push(shortest);
+    }
+
     return picked;
   }
 
@@ -1282,9 +1308,21 @@ const Decompose = (() => {
 
   function rescheduleTasks(tasks) {
     const today = new Date().toISOString().split('T')[0];
+    // Sort overdue tasks oldest-first, then spread them: 2 per day starting from today
+    const overdue = tasks
+      .filter(t => t.status !== 'done' && t.deadline < today)
+      .sort((a, b) => a.deadline.localeCompare(b.deadline));
+
+    const MAX_PER_DAY = 2;
+    const rescheduledMap = {};
+    overdue.forEach((t, i) => {
+      const dayOffset = Math.floor(i / MAX_PER_DAY);
+      rescheduledMap[t.id] = addDays(today, dayOffset);
+    });
+
     return tasks.map(t =>
-      t.status !== 'done' && t.deadline < today
-        ? { ...t, deadline: today, rescheduled: true }
+      rescheduledMap[t.id]
+        ? { ...t, deadline: rescheduledMap[t.id], rescheduled: true }
         : t
     );
   }

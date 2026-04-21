@@ -500,6 +500,14 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
   background: var(--accent-l); color: var(--accent);
   border-color: rgba(176,106,20,.18);
 }
+.meta-pill.due-today {
+  background: #FEF2F2; color: #C9424B;
+  border-color: rgba(201,66,75,.2);
+}
+.meta-pill.due-soon {
+  background: #FFF8ED; color: #B06A14;
+  border-color: rgba(176,106,20,.2);
+}
 
 /* ── Expanded Task Card ─────────────────────────────────── */
 .task-card.expanded { padding: 0; }

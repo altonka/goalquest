@@ -223,7 +223,7 @@ const App = (() => {
         </div>
         ` : ''}
 
-        ${rescheduledCount > 0 ? `<div class="reschedule-notice">📅 ${rescheduledCount} task${rescheduledCount > 1 ? 's' : ''} rescheduled to today</div>` : ''}
+        ${rescheduledCount > 0 ? `<div class="reschedule-notice">📅 ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled — spread across next ${Math.ceil(rescheduledCount/2)} day${rescheduledCount > 2 ? 's' : ''}</div>` : ''}
         ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);">💡 Lighter load today — 1 task done = win</div>` : ''}
 
         <!-- Goal bar -->
@@ -246,7 +246,10 @@ const App = (() => {
         <!-- Today header -->
         <div class="today-header">
           <span class="today-title">Today's Quest</span>
-          <span class="today-count">${doneTasks.length}/${dailyTasks.length} done</span>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+            <span class="today-count">${doneTasks.length}/${dailyTasks.length} done</span>
+            ${todoTasks.length ? `<span style="font-size:0.72rem;color:var(--muted);">~${todoTasks.reduce((s,t)=>s+(t.estimatedMinutes||0),0)} min left</span>` : ''}
+          </div>
         </div>
         ${dailyTasks.length ? `
         <div class="perfect-progress">
@@ -343,9 +346,16 @@ const App = (() => {
     }
 
     if (!isExpanded) {
-      // ── COLLAPSED ──
+      // ── COLLAPSED — whole card is tappable ──
+      const todayStr = new Date().toISOString().split('T')[0];
+      const tomorrowStr = Decompose.addDays(todayStr, 1);
+      const deadlineLabel = !task.deadline ? ''
+        : task.deadline === todayStr ? '<span class="meta-pill due-today">due today</span>'
+        : task.deadline === tomorrowStr ? '<span class="meta-pill due-soon">due tomorrow</span>'
+        : '';
       return `
-        <div class="task-card ${task.isBoss ? 'boss' : 'normal'}" id="tc-${task.id}">
+        <div class="task-card ${task.isBoss ? 'boss' : 'normal'}" id="tc-${task.id}"
+          onclick="App.expandTask('${task.id}')" style="cursor:pointer;">
           <div class="tc-collapsed">
             <div class="tc-top-row">
               <span class="tc-diff-badge diff-${task.difficulty}">${task.difficulty}</span>
@@ -355,7 +365,8 @@ const App = (() => {
             <div class="tc-bottom-row">
               <span class="meta-pill time">⏱ ${task.estimatedMinutes}min</span>
               <span class="meta-pill ${task.isBoss ? 'boss-xp' : 'xp'}">+${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</span>
-              <button class="btn-start" onclick="App.expandTask('${task.id}')">▶ Start Task</button>
+              ${deadlineLabel}
+              <span class="btn-start">▶ Start Task</span>
             </div>
           </div>
         </div>`;
@@ -1100,7 +1111,7 @@ const App = (() => {
     }
 
     const { goal, milestones, tasks } = draftPlan;
-    const sampleTasks = tasks.slice(0, 3);
+    const sampleTasks = tasks.filter(t => t.milestoneId === milestones[0]?.id).slice(0, 6);
     const dailyMins = Math.round((goal.hoursPerWeek * 60) / 7);
     const weeksCount = Math.max(1, Math.round(
       (new Date(goal.deadline + 'T00:00:00') - new Date(goal.startDate + 'T00:00:00'))
@@ -1189,7 +1200,11 @@ const App = (() => {
         </div>
 
         <div class="preview-section">
-          <div class="preview-section-label">WEEK 1 — SAMPLE TASKS</div>
+          <div class="preview-section-label">MILESTONE 1 — PREVIEW TASKS (${sampleTasks.length} of ${tasks.filter(t=>t.milestoneId===milestones[0]?.id).length})</div>
+          ${sampleTasks.some(t => t.estimatedMinutes > dailyMins * 1.5) ? `
+          <div style="background:var(--warning-l,#fff8e1);border:1px solid var(--warning,#f6c90e);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.8rem;color:#7a5f00;">
+            ⚠️ Some tasks are longer than your ~${dailyMins}-min daily budget. You can click <strong>🎯 Shorter Tasks</strong> below to split them, or pace them across 2 days.
+          </div>` : ''}
           ${sampleTasks.map(t => {
             const dc = t.difficulty === 'easy' ? 'var(--success)' : t.difficulty === 'stretch' ? 'var(--danger)' : 'var(--accent)';
             const db = t.difficulty === 'easy' ? 'var(--success-l)' : t.difficulty === 'stretch' ? 'var(--danger-l)' : 'var(--accent-l)';
