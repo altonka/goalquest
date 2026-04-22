@@ -204,10 +204,16 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 .nav-item {
   flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 4px; background: none; border: none;
-  color: var(--muted2); transition: color var(--t); padding: 8px;
-  min-height: 44px;
+  color: var(--muted2); transition: color var(--t), background var(--t);
+  padding: 8px; min-height: 44px; position: relative;
+  border-top: 2px solid transparent;
 }
-.nav-item.active { color: var(--primary); }
+.nav-item:hover { color: var(--text2); background: var(--surface2); }
+.nav-item.active {
+  color: var(--primary);
+  border-top-color: var(--primary);
+  background: var(--primary-m);
+}
 .nav-item-icon { line-height: 1; }
 .nav-item-icon svg { width: 22px; height: 22px; display: block; }
 .nav-item-label { font-size: 0.64rem; font-weight: 600; letter-spacing: .02em; }
@@ -353,7 +359,7 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 
 /* ── Section Header ────────────────────────────────────── */
 .today-header {
-  display: flex; justify-content: space-between; align-items: baseline;
+  display: flex; justify-content: space-between; align-items: flex-start;
   margin-bottom: 12px; margin-top: 4px;
 }
 .today-title {
@@ -423,6 +429,10 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
   box-shadow: var(--shadow-md);
   border-color: rgba(124,140,255,.20);
 }
+.task-card:not(.done):not(.expanded):active {
+  transform: scale(.985) translateY(0);
+  box-shadow: var(--shadow-sm);
+}
 .task-card.done {
   opacity: .55; display: flex; align-items: center;
   gap: 12px; padding: 12px 16px;
@@ -468,23 +478,24 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 .diff-core    { background: var(--accent-bg);   color: var(--accent);  border-color: var(--accent-border);  }
 .diff-stretch { background: var(--danger-bg);   color: var(--danger);  border-color: var(--danger-border);  }
 
-/* Start button */
+/* Start button — span inside tappable card */
 .btn-start {
   margin-left: auto; padding: 8px 18px;
   background: var(--primary); color: #fff;
-  border: none; border-radius: 99px;
-  font-size: 0.8rem; font-weight: 600;
+  border-radius: 99px; font-size: 0.8rem; font-weight: 600;
   white-space: nowrap; transition: all var(--t);
-  font-family: inherit; letter-spacing: -.01em;
+  letter-spacing: -.01em; display: inline-block;
   box-shadow: 0 2px 8px rgba(88,101,245,.22);
-  min-height: 44px;
+  line-height: 28px;
 }
-.btn-start:hover {
+/* Parent hover lifts the pill */
+.task-card:not(.done):not(.expanded):hover .btn-start {
   background: var(--primary-h);
-  transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(88,101,245,.30);
 }
-.btn-start:active { transform: scale(.97); }
+.task-card:not(.done):not(.expanded):active .btn-start {
+  box-shadow: none;
+}
 
 /* Meta pills */
 .meta-pill {
@@ -1103,14 +1114,29 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
   border-radius: var(--radius); padding: 20px 14px; text-align: center;
   box-shadow: var(--shadow-sm);
 }
-.feat-icon { font-size: 1.6rem; display: block; margin-bottom: 10px; }
+.feat-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; margin: 0 auto 12px;
+  background: var(--primary-l); border-radius: var(--radius-sm);
+  color: var(--primary);
+}
+.feat-icon svg { width: 22px; height: 22px; display: block; }
 .feature-card h3 { font-size: 0.82rem; font-weight: 700; margin-bottom: 4px; letter-spacing: -.01em; }
 .feature-card p { font-size: 0.72rem; color: var(--muted); line-height: 1.55; }
 
 /* ── Generating ────────────────────────────────────────── */
 .generating-page {
-  display: flex; align-items: center; justify-content: center;
   min-height: 100dvh; background: var(--bg);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 24px 16px;
+}
+.gen-skeleton-wrap { width: 100%; max-width: 580px; }
+.gen-status {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 24px; padding: 14px 18px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  font-size: 0.875rem; font-weight: 500; color: var(--muted);
 }
 .gen-inner { text-align: center; max-width: 300px; }
 .gen-inner h2 {
@@ -1120,10 +1146,39 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 }
 .gen-inner p { color: var(--muted); font-size: 0.875rem; line-height: 1.65; }
 .spinner {
-  width: 44px; height: 44px; border: 2.5px solid var(--border);
+  width: 22px; height: 22px; border: 2px solid var(--border);
   border-top-color: var(--primary-tint); border-radius: 50%;
-  animation: spin .75s linear infinite; margin: 0 auto;
+  animation: spin .75s linear infinite; flex-shrink: 0;
 }
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+.skel-plan { display: flex; flex-direction: column; gap: 16px; }
+.skel-section {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 18px; box-shadow: var(--shadow-sm);
+}
+.skel-bar {
+  border-radius: 6px; height: 12px;
+  background: linear-gradient(90deg, var(--surface2) 25%, var(--border) 50%, var(--surface2) 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.skel-label  { width: 90px; height: 8px; margin-bottom: 14px; opacity: .6; }
+.skel-card   { padding: 4px 0; }
+.skel-title  { width: 70%; height: 14px; margin-bottom: 10px; }
+.skel-meta   { width: 50%; height: 10px; margin-bottom: 7px; opacity: .7; }
+.skel-short  { width: 35%; }
+.skel-ms-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.skel-ms-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+.skel-ms-title { width: 55%; height: 11px; margin-bottom: 6px; }
+.skel-ms-desc  { width: 80%; height: 9px; opacity: .6; }
+.skel-task-row { background: var(--surface2); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px; }
+.skel-task-title { width: 65%; height: 12px; margin-bottom: 8px; }
+.skel-task-meta  { width: 40%; height: 9px; opacity: .6; }
 
 /* ── Reflection ────────────────────────────────────────── */
 .reflection-overlay {

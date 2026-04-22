@@ -168,9 +168,18 @@ const App = (() => {
             <button class="btn btn-primary btn-lg" onclick="App.nav('new-goal')">Start Your Quest →</button>
           </div>
           <div class="features">
-            <div class="feature-card"><span class="feat-icon">🎯</span><h3>Smart Breakdown</h3><p>Goals → Milestones → Daily tasks</p></div>
-            <div class="feature-card"><span class="feat-icon">🗺️</span><h3>Progress Map</h3><p>Visual Duolingo-style journey</p></div>
-            <div class="feature-card"><span class="feat-icon">⚡</span><h3>Momentum XP</h3><p>Streaks multiply your rewards</p></div>
+            <div class="feature-card">
+              <span class="feat-icon"><i data-lucide="target"></i></span>
+              <h3>Smart Breakdown</h3><p>Goals → Milestones → Daily tasks</p>
+            </div>
+            <div class="feature-card">
+              <span class="feat-icon"><i data-lucide="map"></i></span>
+              <h3>Progress Map</h3><p>Visual journey with unlockable stages</p>
+            </div>
+            <div class="feature-card">
+              <span class="feat-icon"><i data-lucide="zap"></i></span>
+              <h3>Momentum XP</h3><p>Streaks multiply your rewards</p>
+            </div>
           </div>
           ${renderBottomNav()}
         </div>
@@ -1075,10 +1084,40 @@ const App = (() => {
   function renderGenerating() {
     return `
       <div class="generating-page">
-        <div class="gen-inner">
-          <div class="spinner"></div>
-          <h2>Building your Quest...</h2>
-          <p>AI is crafting your personalized plan · This takes a few seconds</p>
+        <div class="gen-skeleton-wrap">
+          <div class="gen-status">
+            <div class="spinner"></div>
+            <span>Building your Quest…</span>
+          </div>
+          <div class="skel-plan">
+            <div class="skel-section">
+              <div class="skel-bar skel-label"></div>
+              <div class="skel-card">
+                <div class="skel-bar skel-title"></div>
+                <div class="skel-bar skel-meta"></div>
+                <div class="skel-bar skel-meta skel-short"></div>
+              </div>
+            </div>
+            <div class="skel-section">
+              <div class="skel-bar skel-label"></div>
+              ${[1,2,3,4].map(() => `
+                <div class="skel-ms-row">
+                  <div class="skel-ms-dot"></div>
+                  <div style="flex:1">
+                    <div class="skel-bar skel-ms-title"></div>
+                    <div class="skel-bar skel-ms-desc"></div>
+                  </div>
+                </div>`).join('')}
+            </div>
+            <div class="skel-section">
+              <div class="skel-bar skel-label"></div>
+              ${[1,2].map(() => `
+                <div class="skel-task-row">
+                  <div class="skel-bar skel-task-title"></div>
+                  <div class="skel-bar skel-task-meta"></div>
+                </div>`).join('')}
+            </div>
+          </div>
         </div>
       </div>
     `;
