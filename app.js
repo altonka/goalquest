@@ -476,6 +476,7 @@ const App = (() => {
     focusSecondsLeft = 25 * 60;
     focusRunning = false;
     if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
+    if (typeof Space !== 'undefined') Space.setFocusMode(true);
     currentPage = 'focus';
     render();
     window.scrollTo(0, 0);
@@ -528,6 +529,7 @@ const App = (() => {
     if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
     focusRunning = false;
     focusTaskId = null;
+    if (typeof Space !== 'undefined') Space.setFocusMode(false);
     currentPage = 'home';
     render();
   }
@@ -946,6 +948,7 @@ const App = (() => {
       if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
       focusRunning = false;
       focusTaskId = null;
+      if (typeof Space !== 'undefined') Space.setFocusMode(false);
       currentPage = 'home';
     }
 
@@ -973,6 +976,13 @@ const App = (() => {
     // Flash the card
     const card = document.getElementById(`tc-${taskId}`);
     if (card) card.classList.add('flash-complete');
+
+    // Space burst + update progress
+    if (typeof Space !== 'undefined') {
+      Space.burst(event ? event.clientX : null, event ? event.clientY : null);
+      const newGoalPct = Gamification.getGoalProgress(State.get().currentGoalId, updatedTasks);
+      Space.setProgress(newGoalPct);
+    }
 
     // XP animation
     showXPAnim(xpEarned, multiplier, task.isBoss, clientY);
@@ -1372,6 +1382,17 @@ const App = (() => {
         }
       }
     });
+
+    // Init Space background
+    if (typeof Space !== 'undefined') {
+      Space.init();
+      const s0 = State.get();
+      const allTasks = s0.tasks || [];
+      const goalPct = allTasks.length
+        ? Gamification.getGoalProgress(s0.currentGoalId, allTasks)
+        : 0;
+      Space.setProgress(goalPct);
+    }
 
     render();
   }
