@@ -24,7 +24,14 @@ const App = (() => {
   let showWhyReminder = false;   // show "why you started" today
   let obstacleTaskId = null;     // task id for "I'm Stuck" bottom sheet
   let showCalibration = false;   // 7-day calibration check modal
-  // completedSteps removed — now persisted in State.stepProgress
+
+  // ── Plan Chat State ───────────────────────────────────────────────────────
+  let planChatHistory = [];       // { role, content }[]
+  let planChatPending = null;     // { changes[], newPlan } — waiting for apply/discard
+
+  // ── Calendar State ────────────────────────────────────────────────────────
+  let calWeekOffset = 0;          // 0 = current week, ±N = weeks forward/back
+  let calAddModal = null;         // { date, startHour } — add-event modal open
 
   // ── Focus Mode State ──────────────────────────────────────────────────────
   let focusTaskId = null;
@@ -38,6 +45,10 @@ const App = (() => {
   function nav(page) {
     currentPage = page;
     activeModal = null;
+    // Reset calendar add modal when leaving calendar
+    if (page !== 'calendar') calAddModal = null;
+    // Reset plan chat state when leaving plan-preview
+    if (page !== 'plan-preview') { planChatHistory = []; planChatPending = null; }
     render();
     window.scrollTo(0, 0);
   }
@@ -74,10 +85,11 @@ const App = (() => {
   function renderSidebar(user) {
     const li = Gamification.getLevelInfo(user.xp);
     const items = [
-      { id: 'home',    icon: 'home',        label: 'Today' },
-      { id: 'map',     icon: 'map',         label: 'Map' },
-      { id: 'review',  icon: 'calendar-check', label: 'Review' },
-      { id: 'profile', icon: 'user',        label: 'Profile' },
+      { id: 'home',     icon: 'home',           label: 'Today' },
+      { id: 'map',      icon: 'map',            label: 'Map' },
+      { id: 'calendar', icon: 'calendar',       label: 'Calendar' },
+      { id: 'review',   icon: 'calendar-check', label: 'Review' },
+      { id: 'profile',  icon: 'user',           label: 'Profile' },
     ];
     return `
       <aside class="sidebar" role="navigation" aria-label="Main navigation">
@@ -1096,6 +1108,8 @@ const App = (() => {
 
   function generatePlan() {
     currentPage = 'generating';
+    planChatHistory = [];
+    planChatPending = null;
     render();
     Decompose.buildPlanAI(clarData).then((plan) => {
       draftPlan = plan;
@@ -1761,10 +1775,11 @@ const App = (() => {
 
   function renderBottomNav() {
     const items = [
-      { id: 'home',    icon: 'home',            label: 'Today' },
-      { id: 'map',     icon: 'map',             label: 'Map' },
-      { id: 'review',  icon: 'calendar-check',  label: 'Review' },
-      { id: 'profile', icon: 'user',            label: 'Profile' },
+      { id: 'home',     icon: 'home',           label: 'Today' },
+      { id: 'map',      icon: 'map',            label: 'Map' },
+      { id: 'calendar', icon: 'calendar',       label: 'Calendar' },
+      { id: 'review',   icon: 'calendar-check', label: 'Review' },
+      { id: 'profile',  icon: 'user',           label: 'Profile' },
     ];
     return `
       <nav class="bottom-nav">
@@ -1867,8 +1882,8 @@ const App = (() => {
       { label: '🎯 Shorter Tasks',    modifier: 'break all tasks into shorter sessions under 30 minutes each' },
     ];
 
-    return `
-      <div class="preview-page">
+    const planLeft = `
+      <div class="preview-page preview-left-pane">
         <div class="preview-header">
           <button class="btn-back" onclick="App.backToQuestions()">← Edit</button>
           <div class="preview-header-title">Your Quest Plan</div>
@@ -1901,7 +1916,7 @@ const App = (() => {
         <div class="preview-section">
           <div class="preview-section-label">MILESTONE ROADMAP</div>
           ${milestones.map((m, i) => `
-            <div class="preview-milestone" style="border-left:3px solid ${m.color};">
+            <div class="preview-milestone ${planChatPending ? 'pcp-hl-ms' : ''}" style="border-left:3px solid ${m.color};">
               <div class="pm-top">
                 <span class="pm-world" style="color:${m.color};">World ${i + 1}</span>
                 <span class="pm-title">${h(m.title)}</span>
@@ -1940,14 +1955,14 @@ const App = (() => {
         <div class="preview-section">
           <div class="preview-section-label">MILESTONE 1 — PREVIEW TASKS (${sampleTasks.length} of ${tasks.filter(t=>t.milestoneId===milestones[0]?.id).length})</div>
           ${sampleTasks.some(t => t.estimatedMinutes > dailyMins * 1.5) ? `
-          <div style="background:var(--warning-l,#fff8e1);border:1px solid var(--warning,#f6c90e);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.8rem;color:#7a5f00;">
-            ⚠️ Some tasks are longer than your ~${dailyMins}-min daily budget. You can click <strong>🎯 Shorter Tasks</strong> below to split them, or pace them across 2 days.
+          <div style="background:rgba(251,191,36,0.1);border:1px solid var(--accent);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.8rem;color:var(--accent);">
+            ⚠️ Some tasks are longer than your ~${dailyMins}-min daily budget. Use the chat → "Shorten all tasks to 30 minutes".
           </div>` : ''}
           ${sampleTasks.map(t => {
             const dc = t.difficulty === 'easy' ? 'var(--success)' : t.difficulty === 'stretch' ? 'var(--danger)' : 'var(--accent)';
             const db = t.difficulty === 'easy' ? 'var(--success-l)' : t.difficulty === 'stretch' ? 'var(--danger-l)' : 'var(--accent-l)';
             return `
-              <div class="preview-task-card">
+              <div class="preview-task-card ${planChatPending ? 'pcp-hl-task' : ''}">
                 <div class="ptc-top">
                   <span class="ptc-diff" style="background:${db};color:${dc};">${t.difficulty}</span>
                   <span class="ptc-title">${h(t.title)}</span>
@@ -1975,8 +1990,8 @@ const App = (() => {
         </div>` : ''}
 
         <div class="preview-section">
-          <div class="preview-section-label">OPTIMIZE PLAN</div>
-          <p class="preview-optimize-hint">Not happy with the draft? Adjust before you commit.</p>
+          <div class="preview-section-label">ONE-CLICK OPTIMIZE</div>
+          <p class="preview-optimize-hint">Quick presets — or use the chat panel to describe exactly what you want.</p>
           <div class="preview-optimize-grid">
             ${OPTIMIZE_OPTIONS.map(o => `
               <button class="opt-btn" onclick="App.optimizePlan('${o.modifier}')">${o.label}</button>
@@ -1992,6 +2007,380 @@ const App = (() => {
         <div style="height:32px;"></div>
       </div>
     `;
+
+    return `
+      <div class="preview-split">
+        ${planLeft}
+        <div class="preview-right">
+          ${renderPlanChatPanel()}
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Plan Chat Panel ───────────────────────────────────────────────────────
+
+  function renderPlanChatPanel() {
+    const SUGGESTIONS = [
+      'Make week 1 easier',
+      'Reduce tasks in milestone 2',
+      'Add practice tasks',
+      'Replace resources with YouTube videos',
+      'Move milestone 2 back 1 week',
+      'Shorten all tasks to 30 minutes',
+    ];
+
+    const msgs = planChatHistory.length === 0 ? `
+      <div class="pcp-empty">
+        <div class="pcp-empty-icon">✨</div>
+        <div class="pcp-empty-text">Chat to refine your plan before approving it</div>
+        <div class="pcp-suggestions">
+          ${SUGGESTIONS.map(s => `
+            <button class="pcp-suggest" onclick="App.sendPlanChat(${JSON.stringify(s)})">${h(s)}</button>
+          `).join('')}
+        </div>
+      </div>
+    ` : planChatHistory.map(msg => `
+      <div class="pcp-msg pcp-msg-${h(msg.role)}">
+        ${msg.role === 'assistant' ? '<div class="pcp-msg-icon">✨</div>' : ''}
+        <div class="pcp-msg-bubble">${h(msg.content).replace(/\n/g, '<br>')}</div>
+      </div>
+    `).join('');
+
+    const pendingCard = planChatPending ? `
+      <div class="pcp-preview-card">
+        <div class="pcp-preview-title">Proposed Changes</div>
+        ${planChatPending.descs.map(d => `
+          <div class="pcp-change-row">
+            <span class="pcp-change-dot"></span>
+            <span>${h(d)}</span>
+          </div>
+        `).join('')}
+        <div class="pcp-preview-actions">
+          <button class="btn btn-ghost pcp-btn" onclick="App.discardPlanChanges()">✕ Discard</button>
+          <button class="btn btn-primary pcp-btn" onclick="App.applyPlanChanges()">✓ Apply</button>
+        </div>
+      </div>
+    ` : '';
+
+    return `
+      <div class="plan-chat-panel">
+        <div class="pcp-header">
+          <span class="pcp-title">Plan Editor</span>
+          <span class="pcp-sub">Describe what to change — AI will preview it first</span>
+        </div>
+        <div class="pcp-messages" id="pcp-msgs">
+          ${msgs}
+          ${pendingCard}
+        </div>
+        <div class="pcp-input-row">
+          <input type="text" id="pcp-input" class="pcp-input"
+            placeholder="e.g. Make milestone 1 easier…"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();App.sendPlanChat(this.value)}">
+          <button class="pcp-send" onclick="App.sendPlanChat(document.getElementById('pcp-input').value)">
+            <i data-lucide="send"></i>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function sendPlanChat(text) {
+    text = (text || '').trim();
+    if (!text || !draftPlan) return;
+    const inp = document.getElementById('pcp-input');
+    if (inp) inp.value = '';
+
+    planChatHistory.push({ role: 'user', content: text });
+    planChatPending = null; // clear any previous pending
+
+    const changes = PlanChat.parseCommand(text, draftPlan);
+    const response = PlanChat.generateResponse(text, changes, draftPlan);
+    planChatHistory.push({ role: 'assistant', content: response });
+
+    if (changes.length > 0) {
+      planChatPending = {
+        changes,
+        descs: PlanChat.describeChanges(changes, draftPlan),
+        newPlan: PlanChat.applyChanges(draftPlan, changes),
+      };
+    }
+
+    render();
+    requestAnimationFrame(() => {
+      const el = document.getElementById('pcp-msgs');
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  function applyPlanChanges() {
+    if (!planChatPending) return;
+    draftPlan = planChatPending.newPlan;
+    planChatHistory.push({ role: 'system', content: '✓ Changes applied.' });
+    planChatPending = null;
+    showNotif('Plan updated!');
+    render();
+    requestAnimationFrame(() => {
+      const el = document.getElementById('pcp-msgs');
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+  }
+
+  function discardPlanChanges() {
+    planChatHistory.push({ role: 'system', content: '✕ Changes discarded.' });
+    planChatPending = null;
+    render();
+  }
+
+  // ── Calendar Page ─────────────────────────────────────────────────────────
+
+  function renderCalendar() {
+    const s = State.get();
+    const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+    if (!goal) return renderHome();
+
+    const todayDate = new Date();
+    const baseDate = new Date(todayDate);
+    baseDate.setDate(baseDate.getDate() + calWeekOffset * 7);
+
+    const weekStart = CalendarHelper.getWeekStart(baseDate);
+    const weekDates = CalendarHelper.getWeekDates(weekStart);
+    const todayStr = todayDate.toISOString().split('T')[0];
+
+    const goalTasks = s.tasks.filter(t => t.goalId === goal.id);
+    const activeTasks = goalTasks.filter(t => t.status !== 'done');
+    const taskSlots = CalendarHelper.getTaskSlots(activeTasks, s.taskSchedules || {}, weekDates);
+    const userEvents = (s.calendarEvents || []).filter(ev => weekDates.includes(ev.date));
+    const conflicts = CalendarHelper.findConflicts(taskSlots, userEvents);
+    const conflictTaskIds = new Set(conflicts.map(c => c.slotTaskId));
+
+    const START_H = 7, END_H = 22, TOTAL_H = END_H - START_H;
+    const HOUR_PX = 56;
+    const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    function fmtHour(h) {
+      if (h === 12) return '12 PM';
+      return h > 12 ? `${h - 12} PM` : `${h} AM`;
+    }
+    function fmtWeekRange() {
+      const end = new Date(weekStart); end.setDate(end.getDate() + 6);
+      return `${MONTHS[weekStart.getMonth()]} ${weekStart.getDate()} – ${MONTHS[end.getMonth()]} ${end.getDate()}`;
+    }
+
+    const dayColumns = weekDates.map((date, di) => {
+      const isToday = date === todayStr;
+      const daySlots = taskSlots.filter(sl => sl.date === date);
+      const dayEvents = userEvents.filter(ev => ev.date === date);
+      const d = new Date(date + 'T00:00:00');
+      const hasConflict = daySlots.some(sl => conflictTaskIds.has(sl.taskId));
+
+      const taskBlocks = daySlots.map(sl => {
+        const task = s.tasks.find(t => t.id === sl.taskId);
+        if (!task) return '';
+        const top = (sl.startHour - START_H) * HOUR_PX;
+        const heightPx = Math.max(24, (sl.endHour - sl.startHour) * HOUR_PX - 4);
+        const isConflict = conflictTaskIds.has(sl.taskId);
+        const isDone = task.status === 'done';
+        return `
+          <div class="cal-event cal-ai-task ${isDone ? 'cal-done' : ''} ${isConflict ? 'cal-conflict' : ''}"
+               style="top:${top}px;height:${heightPx}px"
+               onclick="event.stopPropagation();App.calTaskClick('${h(task.id)}')">
+            <div class="cal-event-title">${h(task.title)}</div>
+            <div class="cal-event-meta">${task.estimatedMinutes}m · ${task.difficulty}</div>
+            ${isDone ? '<div class="cal-done-mark">✓</div>' : ''}
+            ${isConflict ? '<div class="cal-conflict-mark">⚠</div>' : ''}
+          </div>`;
+      }).join('');
+
+      const eventBlocks = dayEvents.map(ev => {
+        const top = (ev.startHour - START_H) * HOUR_PX;
+        const heightPx = Math.max(24, (ev.endHour - ev.startHour) * HOUR_PX - 4);
+        return `
+          <div class="cal-event cal-user-event"
+               style="top:${top}px;height:${heightPx}px"
+               onclick="event.stopPropagation();App.calEventClick('${h(ev.id)}')">
+            <div class="cal-event-title">${h(ev.title)}</div>
+            <button class="cal-event-del" onclick="event.stopPropagation();App.calDeleteEvent('${h(ev.id)}')">×</button>
+          </div>`;
+      }).join('');
+
+      return `
+        <div class="cal-day-col ${isToday ? 'cal-today-col' : ''} ${hasConflict ? 'cal-conflict-col' : ''}">
+          <div class="cal-day-header ${isToday ? 'cal-today-header' : ''}">
+            <span class="cal-day-name">${DAYS[di]}</span>
+            <span class="cal-day-num ${isToday ? 'cal-today-num' : ''}">${d.getDate()}</span>
+          </div>
+          <div class="cal-day-body" style="height:${TOTAL_H * HOUR_PX}px;position:relative;"
+               onclick="App.calClickSlot('${date}', event, ${HOUR_PX}, ${START_H})">
+            ${Array.from({ length: TOTAL_H }, (_, i) => `
+              <div class="cal-hour-line" style="top:${i * HOUR_PX}px"></div>`).join('')}
+            ${taskBlocks}
+            ${eventBlocks}
+          </div>
+        </div>`;
+    }).join('');
+
+    const timeAxis = `
+      <div class="cal-time-col">
+        <div class="cal-time-header"></div>
+        ${Array.from({ length: TOTAL_H }, (_, i) => `
+          <div class="cal-time-slot" style="height:${HOUR_PX}px">${fmtHour(START_H + i)}</div>`).join('')}
+      </div>`;
+
+    return `
+      <div class="page calendar-page">
+        <div class="cal-header">
+          <div class="cal-title-row">
+            <h2 class="cal-title">Calendar</h2>
+            <div class="cal-nav">
+              <button class="cal-nav-btn" onclick="App.calNavWeek(-1)"><i data-lucide="chevron-left"></i></button>
+              <span class="cal-week-label">${fmtWeekRange()}</span>
+              <button class="cal-nav-btn" onclick="App.calNavWeek(1)"><i data-lucide="chevron-right"></i></button>
+              <button class="cal-nav-btn cal-today-btn ${calWeekOffset === 0 ? 'active' : ''}"
+                      onclick="App.calNavToday()">Today</button>
+            </div>
+          </div>
+          <div class="cal-legend">
+            <span class="cal-legend-item cal-legend-ai"><span class="cal-legend-dot"></span>AI Task</span>
+            <span class="cal-legend-item cal-legend-user"><span class="cal-legend-dot"></span>Your Event</span>
+            <span class="cal-legend-item cal-legend-hint">Click any slot to add an event</span>
+          </div>
+          ${conflicts.length ? `
+          <div class="cal-conflict-notice">
+            ⚠️ ${conflicts.length} overlap${conflicts.length > 1 ? 's' : ''} detected —
+            <button class="cal-conflict-resolve" onclick="App.calResolveConflicts()">Review</button>
+          </div>` : ''}
+        </div>
+
+        <div class="cal-grid-outer">
+          ${timeAxis}
+          <div class="cal-days-grid">${dayColumns}</div>
+        </div>
+
+        ${calAddModal ? renderCalAddModal() : ''}
+        ${renderBottomNav()}
+      </div>
+    `;
+  }
+
+  function renderCalAddModal() {
+    const { date, startHour } = calAddModal;
+    const d = new Date(date + 'T00:00:00');
+    const dayLabel = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    const endHour = Math.min(22, startHour + 1);
+
+    function hrOpts(selected, from, to) {
+      return Array.from({ length: to - from }, (_, i) => {
+        const hr = from + i;
+        const lbl = hr === 12 ? '12:00 PM' : hr > 12 ? `${hr - 12}:00 PM` : `${hr}:00 AM`;
+        return `<option value="${hr}" ${hr === selected ? 'selected' : ''}>${lbl}</option>`;
+      }).join('');
+    }
+
+    return `
+      <div class="cal-modal-overlay" onclick="App.calCloseModal()">
+        <div class="cal-modal" onclick="event.stopPropagation()">
+          <div class="cal-modal-title">Add Event</div>
+          <div class="cal-modal-date">${dayLabel}</div>
+          <input id="cal-ev-title" class="cal-modal-input" type="text"
+                 placeholder="e.g. Gym, Dinner, Study" autofocus
+                 onkeydown="if(event.key==='Enter')App.calAddEvent()">
+          <div class="cal-modal-time-row">
+            <div class="cal-modal-time-field">
+              <label>Start</label>
+              <select id="cal-ev-start" class="cal-modal-select">${hrOpts(startHour, 7, 22)}</select>
+            </div>
+            <div class="cal-modal-time-field">
+              <label>End</label>
+              <select id="cal-ev-end" class="cal-modal-select">${hrOpts(endHour, 8, 23)}</select>
+            </div>
+          </div>
+          <div class="cal-modal-actions">
+            <button class="btn btn-ghost" onclick="App.calCloseModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="App.calAddEvent()">Add Event</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Calendar action handlers
+
+  function calNavWeek(dir) { calWeekOffset += dir; render(); }
+  function calNavToday()   { calWeekOffset = 0; render(); }
+
+  function calClickSlot(date, event, hourPx, startH) {
+    const body = event.currentTarget;
+    const rect = body.getBoundingClientRect();
+    const relY = event.clientY - rect.top;
+    const clickedH = startH + Math.floor(relY / hourPx);
+    calAddModal = { date, startHour: Math.max(7, Math.min(21, clickedH)) };
+    render();
+  }
+
+  function calCloseModal() { calAddModal = null; render(); }
+
+  function calAddEvent() {
+    const title = (document.getElementById('cal-ev-title')?.value || '').trim();
+    if (!title) { showNotif('Enter an event name', 'error'); return; }
+    const startHour = parseInt(document.getElementById('cal-ev-start')?.value ?? calAddModal.startHour);
+    const endHour   = parseInt(document.getElementById('cal-ev-end')?.value   ?? startHour + 1);
+    if (endHour <= startHour) { showNotif('End must be after start', 'error'); return; }
+
+    const ev = {
+      id: 'ev_' + Date.now(),
+      type: 'USER_EVENT',
+      title,
+      date: calAddModal.date,
+      startHour,
+      endHour,
+      isCompleted: false,
+      isPinned: false,
+    };
+
+    // Conflict check
+    const s = State.get();
+    const baseDate = new Date();
+    baseDate.setDate(new Date().getDate() + calWeekOffset * 7);
+    const weekDates = CalendarHelper.getWeekDates(CalendarHelper.getWeekStart(baseDate));
+    const goalTasks = s.tasks.filter(t => t.goalId === s.currentGoalId && t.status !== 'done');
+    const slots = CalendarHelper.getTaskSlots(goalTasks, s.taskSchedules || {}, weekDates);
+    const clashes = CalendarHelper.findConflicts(slots, [ev]);
+    if (clashes.length) {
+      const clashTask = s.tasks.find(t => t.id === clashes[0].slotTaskId);
+      const ok = confirm(`This overlaps with your task "${clashTask?.title || 'a scheduled task'}". Add anyway?`);
+      if (!ok) return;
+    }
+
+    State.set(st => ({ ...st, calendarEvents: [...(st.calendarEvents || []), ev] }));
+    calAddModal = null;
+    showNotif(`✓ "${title}" added`);
+    render();
+  }
+
+  function calEventClick(evId) {
+    const ev = (State.get().calendarEvents || []).find(e => e.id === evId);
+    if (!ev) return;
+    if (confirm(`Delete "${ev.title}"?`)) calDeleteEvent(evId);
+  }
+
+  function calDeleteEvent(evId) {
+    State.set(st => ({ ...st, calendarEvents: (st.calendarEvents || []).filter(e => e.id !== evId) }));
+    showNotif('Event removed');
+    render();
+  }
+
+  function calTaskClick(taskId) {
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    if (task.status === 'done') { showNotif('Already completed ✓'); return; }
+    if (confirm(`Mark "${task.title}" as complete?`)) completeTask(taskId, null);
+  }
+
+  function calResolveConflicts() {
+    showNotif('Drag tasks in the calendar, or reschedule via Today page', 'error');
   }
 
   // ── Notification ──────────────────────────────────────────────────────────
@@ -2017,10 +2406,11 @@ const App = (() => {
       app.innerHTML = renderPlanPreview() + renderNotif();
     } else {
       let pageHtml = '';
-      if      (currentPage === 'home')    pageHtml = renderHome();
-      else if (currentPage === 'map')     pageHtml = renderMap();
-      else if (currentPage === 'profile') pageHtml = renderProfile();
-      else if (currentPage === 'review')  pageHtml = renderReview();
+      if      (currentPage === 'home')     pageHtml = renderHome();
+      else if (currentPage === 'map')      pageHtml = renderMap();
+      else if (currentPage === 'calendar') pageHtml = renderCalendar();
+      else if (currentPage === 'profile')  pageHtml = renderProfile();
+      else if (currentPage === 'review')   pageHtml = renderReview();
       else pageHtml = renderHome();
 
       app.innerHTML = `
@@ -2123,5 +2513,10 @@ const App = (() => {
     reviewDefer, reviewSwapDifficulty, saveWeeklyReflection,
     performPrestige, switchGoal,
     showCertificate, dismissCertificate, downloadCertificate,
+    // Plan Chat
+    sendPlanChat, applyPlanChanges, discardPlanChanges,
+    // Calendar
+    calNavWeek, calNavToday, calClickSlot, calCloseModal,
+    calAddEvent, calEventClick, calDeleteEvent, calTaskClick, calResolveConflicts,
   };
 })();

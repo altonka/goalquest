@@ -26,6 +26,9 @@ const State = (() => {
       goalIdentity: '',         // e.g. "a consultant"
     },
     currentGoalId: null,
+    calendarEvents: [],   // { id, type:'USER_EVENT', title, date, startHour, endHour, isCompleted, isPinned }
+    taskSchedules: {},    // { [taskId]: { date, startHour, endHour, isUserModified } }
+    planChat: [],         // { role:'user'|'assistant'|'system', content, ts }
   };
 
   function load() {
@@ -39,6 +42,9 @@ const State = (() => {
       if (!saved.user.taskFeedback) saved.user.taskFeedback = {};
       if (!saved.nodes) saved.nodes = [];
       if (!saved.stepProgress) saved.stepProgress = {};
+      if (!saved.calendarEvents) saved.calendarEvents = [];
+      if (!saved.taskSchedules) saved.taskSchedules = {};
+      if (!saved.planChat) saved.planChat = [];
       return saved;
     } catch { return { ...defaults }; }
   }
