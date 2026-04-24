@@ -1560,3 +1560,334 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
   display: flex; gap: 12px; align-items: center;
   padding: 18px 0; border-top: 1px solid var(--border);
 }
+
+/* ── Obstacle Mode — "I'm Stuck" bottom sheet ──────────── */
+.btn-stuck {
+  color: var(--accent);
+  border-color: rgba(251,191,36,0.25);
+}
+.btn-stuck:hover { background: var(--accent-l); border-color: var(--accent); }
+
+.obstacle-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(6,8,16,0.72);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: flex-end; justify-content: center;
+  animation: fadeIn 0.18s ease;
+}
+.obstacle-sheet {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: 24px 20px 36px;
+  width: 100%; max-width: 520px;
+  animation: slideUp 0.22s cubic-bezier(.16,1,.3,1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+.obstacle-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.obstacle-title { font-size: 1rem; font-weight: 700; color: var(--text1); }
+.obstacle-close {
+  background: none; border: none; color: var(--muted);
+  font-size: 1.1rem; cursor: pointer; padding: 4px 8px;
+  border-radius: 6px; transition: color var(--t);
+}
+.obstacle-close:hover { color: var(--text1); }
+.obstacle-task-name {
+  font-size: 0.82rem; color: var(--muted); margin-bottom: 18px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.obstacle-options { display: flex; flex-direction: column; gap: 10px; }
+.obstacle-option {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 14px 16px;
+  text-align: left; cursor: pointer;
+  transition: border-color var(--t), background var(--t);
+  width: 100%;
+}
+.obstacle-option:hover {
+  border-color: rgba(129,140,248,.4);
+  background: var(--primary-l);
+}
+.obstacle-option-icon { font-size: 1.4rem; flex-shrink: 0; }
+.obstacle-option-body { display: flex; flex-direction: column; gap: 2px; }
+.obstacle-option-title { font-size: 0.88rem; font-weight: 600; color: var(--text1); }
+.obstacle-option-hint  { font-size: 0.77rem; color: var(--muted); line-height: 1.4; }
+
+/* ── 7-Day Calibration Modal ────────────────────────────── */
+.calibration-overlay {
+  position: fixed; inset: 0; z-index: 1010;
+  background: rgba(6,8,16,0.78);
+  backdrop-filter: blur(6px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+.calibration-modal {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 28px 24px;
+  width: 100%; max-width: 420px;
+  animation: scaleIn 0.22s cubic-bezier(.16,1,.3,1);
+}
+@keyframes scaleIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.cal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.cal-title { font-size: 1rem; font-weight: 700; color: var(--text1); }
+.cal-goal-name {
+  font-size: 0.82rem; color: var(--muted); margin-bottom: 20px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cal-stats {
+  display: flex; gap: 12px; margin-bottom: 16px;
+}
+.cal-stat {
+  flex: 1; background: var(--surface); border-radius: var(--radius-sm);
+  padding: 14px 12px; text-align: center;
+}
+.cal-stat-num {
+  font-size: 1.6rem; font-weight: 800; color: var(--primary); line-height: 1;
+}
+.cal-stat-den { font-size: 1rem; font-weight: 600; color: var(--muted); }
+.cal-stat-label { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+.cal-verdict {
+  font-size: 0.84rem; color: var(--text2); line-height: 1.55;
+  margin-bottom: 20px; padding: 12px 14px;
+  background: var(--surface); border-radius: var(--radius-sm);
+}
+.cal-actions { display: flex; flex-direction: column; gap: 8px; }
+.cal-btn {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 13px 16px;
+  text-align: left; cursor: pointer; width: 100%;
+  transition: border-color var(--t), background var(--t);
+  font-size: 1.25rem;
+}
+.cal-btn:hover { background: var(--primary-l); border-color: rgba(129,140,248,.4); }
+.cal-btn-title { font-size: 0.88rem; font-weight: 600; color: var(--text1); }
+.cal-btn-hint  { font-size: 0.76rem; color: var(--muted); }
+.cal-btn-reduce:hover { border-color: rgba(248,113,113,.4); background: var(--danger-l); }
+.cal-btn-boost:hover  { border-color: rgba(74,222,128,.4);  background: var(--success-l); }
+
+/* ── Weekly Review Page ─────────────────────────────────── */
+.review-page { padding-bottom: 80px; }
+.review-header { margin-bottom: 24px; }
+.review-title { font-size: 1.3rem; font-weight: 800; color: var(--text1); margin-bottom: 4px; }
+.review-goal-name { font-size: 0.82rem; color: var(--muted); }
+
+.review-section { margin-bottom: 22px; }
+.review-section-label {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+  color: var(--muted); text-transform: uppercase; margin-bottom: 10px;
+}
+.review-label-warn { color: var(--accent); }
+.review-empty { font-size: 0.82rem; color: var(--muted); padding: 10px 0; }
+
+.review-progress-wrap { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.review-progress-bar {
+  flex: 1; height: 8px; background: var(--surface);
+  border-radius: 99px; overflow: hidden;
+}
+.review-progress-fill {
+  height: 100%; background: var(--primary);
+  border-radius: 99px; transition: width 0.5s ease;
+}
+.review-progress-pct { font-size: 0.88rem; font-weight: 700; color: var(--primary); }
+.review-progress-sub { font-size: 0.77rem; color: var(--muted); }
+
+.review-task-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--surface); margin-bottom: 6px;
+}
+.done-row { opacity: 0.65; }
+.overdue-row { border-left: 2px solid var(--danger); }
+.upcoming-row { border-left: 2px solid var(--primary-l); }
+
+.review-check { color: var(--success); font-weight: 700; flex-shrink: 0; }
+.review-diff {
+  font-size: 0.68rem; font-weight: 700; padding: 2px 6px;
+  border-radius: 4px; text-transform: uppercase; flex-shrink: 0;
+}
+.review-task-title { flex: 1; font-size: 0.85rem; color: var(--text1); line-height: 1.3; }
+.review-task-date  { font-size: 0.75rem; color: var(--muted); flex-shrink: 0; }
+
+.review-task-meta {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.review-deadline { font-size: 0.75rem; color: var(--muted); }
+.review-deadline.due-today { color: var(--accent); font-weight: 600; }
+
+.review-task-actions { display: flex; gap: 4px; }
+.review-action-btn {
+  font-size: 0.72rem; font-weight: 600; padding: 3px 8px;
+  border-radius: 6px; border: 1.5px solid var(--border);
+  background: var(--surface-2); color: var(--text2); cursor: pointer;
+  transition: all var(--t);
+}
+.review-action-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-l); }
+.review-action-done:hover { border-color: var(--success); color: var(--success); background: var(--success-l); }
+.review-action-swap:hover { border-color: var(--accent);  color: var(--accent);  background: var(--accent-l); }
+
+.review-reflect-input {
+  width: 100%; background: var(--surface);
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text1); font-family: inherit; font-size: 0.85rem;
+  padding: 12px 14px; resize: vertical; line-height: 1.55;
+  transition: border-color var(--t);
+}
+.review-reflect-input:focus { outline: none; border-color: var(--primary); }
+
+/* ── Achievement Certificate Modal ──────────────────────── */
+.cert-overlay {
+  position: fixed; inset: 0; z-index: 1020;
+  background: rgba(6,8,16,0.88);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease;
+}
+.cert-modal {
+  background: var(--surface-2);
+  border: 1px solid rgba(129,140,248,0.3);
+  border-radius: var(--radius-lg);
+  padding: 32px 24px 28px;
+  width: 100%; max-width: 460px;
+  text-align: center;
+  animation: scaleIn 0.25s cubic-bezier(.16,1,.3,1);
+}
+.cert-emoji    { font-size: 3rem; margin-bottom: 10px; }
+.cert-headline { font-size: 1.4rem; font-weight: 800; color: var(--text1); margin-bottom: 6px; }
+.cert-name     { font-size: 0.95rem; color: var(--primary); font-weight: 600; margin-bottom: 6px; }
+.cert-date     { font-size: 0.78rem; color: var(--muted); margin-bottom: 18px; }
+.cert-preview  {
+  width: 100%; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); margin-bottom: 20px;
+  display: block;
+}
+.cert-actions  { display: flex; gap: 12px; justify-content: center; }
+
+/* ── Execution Journal ───────────────────────────────────── */
+.journal-field { margin-top: 10px; }
+.journal-input {
+  width: 100%; background: rgba(255,255,255,0.05);
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text1); font-family: inherit; font-size: 0.82rem;
+  padding: 10px 12px; resize: none; line-height: 1.5;
+  transition: border-color var(--t);
+}
+.journal-input:focus { outline: none; border-color: var(--primary); }
+.journal-input::placeholder { color: var(--muted); opacity: 0.7; }
+
+.journal-section { margin-bottom: 24px; }
+.journal-section h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; color: var(--text1); }
+.journal-entries { display: flex; flex-direction: column; gap: 8px; }
+.journal-entry {
+  background: var(--surface); border-radius: var(--radius-sm);
+  border: 1px solid var(--border); padding: 12px 14px;
+}
+.journal-entry-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; gap: 8px;
+}
+.journal-entry-task  { font-size: 0.78rem; font-weight: 600; color: var(--primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.journal-entry-date  { font-size: 0.72rem; color: var(--muted); flex-shrink: 0; }
+.journal-entry-text  { font-size: 0.82rem; color: var(--text2); line-height: 1.55; }
+
+/* ── Prestige + Seasonal Quest ──────────────────────────── */
+.prestige-badge {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--accent); margin-bottom: 6px;
+  text-transform: uppercase;
+}
+.prestige-cta {
+  background: linear-gradient(135deg, rgba(251,191,36,0.12), rgba(129,140,248,0.10));
+  border: 1.5px solid rgba(251,191,36,0.3);
+  border-radius: var(--radius); padding: 16px 18px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; margin-bottom: 20px;
+}
+.prestige-cta-text { font-size: 0.82rem; color: var(--text2); line-height: 1.45; flex: 1; }
+.btn-prestige {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #0a0e1a; border: none; border-radius: var(--radius-sm);
+  font-weight: 700; font-size: 0.82rem; padding: 9px 16px;
+  cursor: pointer; white-space: nowrap; transition: opacity var(--t);
+  flex-shrink: 0;
+}
+.btn-prestige:hover { opacity: 0.88; }
+
+.seasonal-quest-card {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: var(--radius); padding: 16px 18px; margin-bottom: 20px;
+}
+.seasonal-quest-card.earned { border-color: rgba(74,222,128,0.4); background: var(--success-l); }
+.sq-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.sq-icon { font-size: 1.5rem; flex-shrink: 0; }
+.sq-title { font-size: 0.88rem; font-weight: 700; color: var(--text1); }
+.sq-desc  { font-size: 0.76rem; color: var(--muted); margin-top: 2px; }
+.sq-done  { font-size: 0.8rem; font-weight: 700; color: var(--success); margin-left: auto; white-space: nowrap; }
+.sq-progress-bar {
+  height: 6px; background: var(--surface-2); border-radius: 99px;
+  overflow: hidden; margin-bottom: 6px;
+}
+.sq-progress-fill {
+  height: 100%; background: var(--primary); border-radius: 99px;
+  transition: width 0.5s ease;
+}
+.seasonal-quest-card.earned .sq-progress-fill { background: var(--success); }
+.sq-progress-label { font-size: 0.72rem; color: var(--muted); }
+
+/* ── Multiple Goals — switcher ──────────────────────────── */
+.quest-header-row {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+}
+.btn-add-goal {
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 50%; width: 34px; height: 34px;
+  font-size: 1.1rem; color: var(--muted); cursor: pointer;
+  transition: all var(--t); flex-shrink: 0; margin-top: 2px;
+}
+.btn-add-goal:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-l); }
+
+.goal-switcher {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.goal-switch-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface); border: 1.5px solid var(--border);
+  border-radius: 99px; padding: 6px 14px;
+  font-size: 0.78rem; font-weight: 600; color: var(--text2); cursor: pointer;
+  transition: all var(--t); white-space: nowrap; overflow: hidden; max-width: 200px;
+  text-overflow: ellipsis;
+}
+.goal-switch-btn.active {
+  border-color: var(--primary); color: var(--primary); background: var(--primary-l);
+}
+.goal-switch-btn:hover:not(.active) { border-color: rgba(129,140,248,.3); color: var(--text1); }
+.gsb-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); flex-shrink: 0;
+}
+.gsb-dot.active { background: var(--primary); }
+.goal-switch-add {
+  background: none; border: 1.5px dashed var(--border);
+  border-radius: 99px; padding: 6px 14px;
+  font-size: 0.78rem; font-weight: 600; color: var(--muted); cursor: pointer;
+  transition: all var(--t);
+}
+.goal-switch-add:hover { border-color: var(--primary); color: var(--primary); }

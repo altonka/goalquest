@@ -1,6 +1,13 @@
-// Escape user/AI content before inserting into innerHTML
 function h(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+function safeUrl(u) {
+  if (!u) return '#';
+  try {
+    const p = new URL(u);
+    return (p.protocol === 'https:' || p.protocol === 'http:') ? u : '#';
+  } catch { return '#'; }
 }
 
 const App = (() => {
@@ -15,6 +22,8 @@ const App = (() => {
   let comebackMode = false;      // user returned after missing days
   let showReflection = null;     // taskId awaiting difficulty feedback
   let showWhyReminder = false;   // show "why you started" today
+  let obstacleTaskId = null;     // task id for "I'm Stuck" bottom sheet
+  let showCalibration = false;   // 7-day calibration check modal
   // completedSteps removed — now persisted in State.stepProgress
 
   // ── Focus Mode State ──────────────────────────────────────────────────────
@@ -65,9 +74,10 @@ const App = (() => {
   function renderSidebar(user) {
     const li = Gamification.getLevelInfo(user.xp);
     const items = [
-      { id: 'home',    icon: 'home', label: 'Today' },
-      { id: 'map',     icon: 'map',  label: 'Map' },
-      { id: 'profile', icon: 'user', label: 'Profile' },
+      { id: 'home',    icon: 'home',        label: 'Today' },
+      { id: 'map',     icon: 'map',         label: 'Map' },
+      { id: 'review',  icon: 'calendar-check', label: 'Review' },
+      { id: 'profile', icon: 'user',        label: 'Profile' },
     ];
     return `
       <aside class="sidebar" role="navigation" aria-label="Main navigation">
@@ -209,9 +219,25 @@ const App = (() => {
       <div class="page">
         <div class="quest-header">
           <div class="home-greeting">${greeting}</div>
-          <div class="quest-label">Active Quest</div>
-          <div class="quest-title">${h(goal.title)}</div>
+          <div class="quest-header-row">
+            <div>
+              <div class="quest-label">Active Quest</div>
+              <div class="quest-title">${h(goal.title)}</div>
+            </div>
+            ${s.goals.length < 3 ? `<button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another goal">＋</button>` : ''}
+          </div>
         </div>
+
+        ${s.goals.length > 1 ? `
+        <div class="goal-switcher">
+          ${s.goals.map(g => `
+            <button class="goal-switch-btn ${g.id === goal.id ? 'active' : ''}"
+              onclick="App.switchGoal('${g.id}')">
+              <span class="gsb-dot ${g.id === goal.id ? 'active' : ''}"></span>
+              ${h(g.title.length > 28 ? g.title.slice(0,28) + '…' : g.title)}
+            </button>`).join('')}
+          ${s.goals.length < 3 ? `<button class="goal-switch-add" onclick="App.nav('new-goal')">+ New</button>` : ''}
+        </div>` : ''}
 
         ${renderStatsStrip(s.user)}
 
@@ -287,6 +313,8 @@ const App = (() => {
   // ── Reflection Modal ──────────────────────────────────────────────────────
 
   function renderReflectionModal(taskId) {
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === taskId);
     return `
       <div class="reflection-overlay" onclick="App.closeReflection(event)">
         <div class="reflection-sheet">
@@ -295,6 +323,10 @@ const App = (() => {
             <button class="ref-btn ref-hard"  onclick="App.submitReflection('${taskId}','hard')">😅 Too Hard</button>
             <button class="ref-btn ref-right" onclick="App.submitReflection('${taskId}','right')">👌 Just Right</button>
             <button class="ref-btn ref-easy"  onclick="App.submitReflection('${taskId}','easy')">⚡ Too Easy</button>
+          </div>
+          <div class="journal-field">
+            <textarea id="journal-input-${taskId}" class="journal-input"
+              rows="2" placeholder="Optional: note what you learned or what to remember next time…"></textarea>
           </div>
           <button class="reflection-skip" onclick="App.closeReflection()">Skip</button>
         </div>
@@ -309,6 +341,23 @@ const App = (() => {
   }
 
   function submitReflection(taskId, rating) {
+    // Save journal entry if text was entered
+    const textarea = document.getElementById(`journal-input-${taskId}`);
+    const journalText = textarea ? textarea.value.trim() : '';
+    if (journalText) {
+      const s = State.get();
+      const task = s.tasks.find(t => t.id === taskId);
+      const entry = {
+        id: `j-${Date.now()}`,
+        taskId,
+        taskTitle: task ? task.title : '',
+        text: journalText,
+        date: new Date().toISOString(),
+        rating,
+      };
+      State.set(st => ({ ...st, journal: [...(st.journal || []), entry] }));
+    }
+
     showReflection = null;
     State.set(s => {
       const tf = { ...(s.user.taskFeedback || {}), [taskId]: rating };
@@ -454,6 +503,7 @@ const App = (() => {
         <!-- Actions -->
         <div class="tc-actions">
           <button class="btn btn-ghost" onclick="App.startFocus('${task.id}')">⏱ Focus</button>
+          <button class="btn btn-ghost btn-stuck" onclick="App.openObstacle('${task.id}')">🚧 Stuck</button>
           <button class="btn btn-primary ${task.isBoss ? 'boss-complete-btn' : ''}"
             onclick="App.completeTask('${task.id}', event)">
             ${task.isBoss ? '⚔️ Complete Boss' : '✓ Mark Complete'}
@@ -540,7 +590,7 @@ const App = (() => {
     if (!task) { exitFocus(); return ''; }
 
     const steps = task.steps || [];
-    const doneSteps = new Set(State.get().stepProgress?.[task.id] || []);
+    const doneSteps = new Set(s.stepProgress?.[task.id] || []);
     const doneCount = steps.filter((_, i) => doneSteps.has(i)).length;
     const timerDone = focusSecondsLeft <= 0;
     const timerClass = timerDone ? 'done' : (focusSecondsLeft <= 60 && focusRunning ? 'warning' : '');
@@ -734,11 +784,36 @@ const App = (() => {
         <h2>👤 Profile</h2>
 
         <div class="profile-level-card">
+          ${u.prestigeLevel ? `<div class="prestige-badge">✦ Prestige ${u.prestigeLevel} · ${Gamification.getPrestigeTitle(u)}</div>` : ''}
           <div class="level-num">${u.level}</div>
           <div class="level-title">${li.current.title}</div>
           <div class="level-xp-bar"><div class="level-xp-fill" style="width:${li.progress}%"></div></div>
-          <div class="level-xp-text">${u.xp} XP · ${li.next ? `${li.progress}% to ${li.next.title}` : 'Max Level'}</div>
+          <div class="level-xp-text">${u.xp} XP · ${li.next ? `${li.progress}% to ${li.next.title}` : 'Max Level — Prestige available!'}</div>
         </div>
+        ${Gamification.canPrestige(u) ? `
+          <div class="prestige-cta">
+            <div class="prestige-cta-text">You've reached <strong>Master</strong> — Prestige to reset XP, keep your badges, and earn a new title.</div>
+            <button class="btn btn-prestige" onclick="App.performPrestige()">✦ Prestige Now</button>
+          </div>` : ''}
+        ${(() => {
+          const sqProg = Gamification.getSeasonalQuestProgress(u, s.tasks);
+          if (!sqProg) return '';
+          return `
+            <div class="seasonal-quest-card ${sqProg.earned ? 'earned' : ''}">
+              <div class="sq-header">
+                <span class="sq-icon">${sqProg.quest.icon}</span>
+                <div>
+                  <div class="sq-title">${sqProg.quest.title}</div>
+                  <div class="sq-desc">${sqProg.quest.desc}</div>
+                </div>
+                ${sqProg.earned ? '<span class="sq-done">✓ Earned</span>' : ''}
+              </div>
+              <div class="sq-progress-bar">
+                <div class="sq-progress-fill" style="width:${sqProg.pct}%"></div>
+              </div>
+              <div class="sq-progress-label">${sqProg.current} / ${sqProg.quest.goal} · ${sqProg.pct}%</div>
+            </div>`;
+        })()}
 
         <div class="profile-stats-grid">
           <div class="profile-stat-card"><div class="ps-val">🔥 ${u.streak}</div><div class="ps-label">Day Streak</div></div>
@@ -790,6 +865,26 @@ const App = (() => {
           </div>
         </div>
 
+        <!-- Execution Journal -->
+        ${(() => {
+          const entries = (s.journal || []).slice().reverse().slice(0, 20);
+          if (!entries.length) return '';
+          return `
+            <div class="journal-section">
+              <h3>📓 Execution Journal (${(s.journal || []).length})</h3>
+              <div class="journal-entries">
+                ${entries.map(e => `
+                  <div class="journal-entry">
+                    <div class="journal-entry-header">
+                      <span class="journal-entry-task">${h(e.taskTitle || '')}</span>
+                      <span class="journal-entry-date">${e.date ? e.date.slice(0,10) : ''}</span>
+                    </div>
+                    <div class="journal-entry-text">${h(e.text)}</div>
+                  </div>`).join('')}
+              </div>
+            </div>`;
+        })()}
+
         <div class="data-zone">
           <h4>💾 Data</h4>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -805,6 +900,140 @@ const App = (() => {
       </div>
       ${renderBottomNav()}
     `;
+  }
+
+  // ── Weekly Review Page ───────────────────────────────────────────────────
+
+  let reviewDeferTaskId = null;   // task id currently being deferred in review
+  let reviewEditTaskId  = null;   // task id being edited in review
+
+  function renderReview() {
+    const s = State.get();
+    if (!s.goals.length) {
+      return `<div class="page"><div class="empty-state"><h2>No goal yet.</h2><button class="btn btn-primary" onclick="App.nav('new-goal')">Create Goal</button></div>${renderBottomNav()}</div>`;
+    }
+    const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+    const allTasks = s.tasks.filter(t => t.goalId === goal.id);
+
+    // Week window
+    const today = new Date().toISOString().split('T')[0];
+    const weekAgo = Decompose.addDays(today, -7);
+    const weekAhead = Decompose.addDays(today, 7);
+
+    const doneThisWeek = allTasks.filter(t => t.status === 'done' && t.completedAt && t.completedAt.slice(0,10) >= weekAgo);
+    const upcoming = allTasks.filter(t => t.status !== 'done' && t.deadline && t.deadline <= weekAhead).sort((a,b) => (a.deadline||'').localeCompare(b.deadline||''));
+    const overdue  = allTasks.filter(t => t.status !== 'done' && t.deadline && t.deadline < today);
+    const totalGoal = allTasks.length;
+    const totalDone = allTasks.filter(t => t.status === 'done').length;
+    const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
+
+    return `
+      <div class="page review-page">
+        <div class="review-header">
+          <h2 class="review-title">📋 Weekly Review</h2>
+          <div class="review-goal-name">${h(goal.title)}</div>
+        </div>
+
+        <!-- Overall progress bar -->
+        <div class="review-section">
+          <div class="review-section-label">OVERALL PROGRESS</div>
+          <div class="review-progress-wrap">
+            <div class="review-progress-bar">
+              <div class="review-progress-fill" style="width:${pct}%"></div>
+            </div>
+            <span class="review-progress-pct">${pct}%</span>
+          </div>
+          <div class="review-progress-sub">${totalDone} of ${totalGoal} tasks complete</div>
+        </div>
+
+        <!-- Done this week -->
+        <div class="review-section">
+          <div class="review-section-label">COMPLETED THIS WEEK (${doneThisWeek.length})</div>
+          ${doneThisWeek.length === 0
+            ? '<div class="review-empty">No tasks completed this week yet.</div>'
+            : doneThisWeek.map(t => `
+                <div class="review-task-row done-row">
+                  <span class="review-check">✓</span>
+                  <span class="review-task-title">${h(t.title)}</span>
+                  <span class="review-task-date">${t.completedAt ? t.completedAt.slice(0,10) : ''}</span>
+                </div>`).join('')}
+        </div>
+
+        <!-- Overdue -->
+        ${overdue.length ? `
+        <div class="review-section">
+          <div class="review-section-label review-label-warn">⚠️ OVERDUE (${overdue.length})</div>
+          ${overdue.map(t => `
+            <div class="review-task-row overdue-row" id="rtr-${t.id}">
+              <span class="review-diff diff-${t.difficulty}">${t.difficulty}</span>
+              <span class="review-task-title">${h(t.title)}</span>
+              <div class="review-task-actions">
+                <button class="review-action-btn" onclick="App.reviewDefer('${t.id}', 3)" title="Defer 3 days">+3d</button>
+                <button class="review-action-btn review-action-swap" onclick="App.reviewSwapDifficulty('${t.id}')" title="Make easier">↓ easy</button>
+              </div>
+            </div>`).join('')}
+        </div>` : ''}
+
+        <!-- Upcoming next 7 days -->
+        <div class="review-section">
+          <div class="review-section-label">NEXT 7 DAYS (${upcoming.length})</div>
+          ${upcoming.length === 0
+            ? '<div class="review-empty">No tasks due this week — you might be ahead!</div>'
+            : upcoming.map(t => `
+                <div class="review-task-row upcoming-row" id="rtr-${t.id}">
+                  <span class="review-diff diff-${t.difficulty}">${t.difficulty}</span>
+                  <span class="review-task-title">${h(t.title)}</span>
+                  <div class="review-task-meta">
+                    <span class="review-deadline ${t.deadline === today ? 'due-today' : ''}">${t.deadline === today ? 'today' : t.deadline}</span>
+                    <div class="review-task-actions">
+                      <button class="review-action-btn" onclick="App.reviewDefer('${t.id}', 2)" title="Defer 2 days">+2d</button>
+                      <button class="review-action-btn review-action-done" onclick="App.completeTask('${t.id}', event)" title="Mark done">✓</button>
+                    </div>
+                  </div>
+                </div>`).join('')}
+        </div>
+
+        <!-- Reflection note -->
+        <div class="review-section">
+          <div class="review-section-label">WEEKLY REFLECTION</div>
+          <textarea class="review-reflect-input" rows="3" placeholder="What worked this week? What will you do differently?"
+            onchange="App.saveWeeklyReflection(this.value)"
+          >${h(s.user.weeklyReflection || '')}</textarea>
+        </div>
+
+        <div style="height:32px;"></div>
+        ${renderBottomNav()}
+      </div>
+    `;
+  }
+
+  function reviewDefer(taskId, days) {
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === taskId);
+    if (!task) return;
+    const base = task.deadline || new Date().toISOString().split('T')[0];
+    const newDeadline = Decompose.addDays(base, days);
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId ? { ...t, deadline: newDeadline } : t),
+    }));
+    showNotif(`Task deferred by ${days} days.`, 'success');
+    render();
+  }
+
+  function reviewSwapDifficulty(taskId) {
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId
+        ? { ...t, difficulty: 'easy', estimatedMinutes: Math.max(15, Math.round((t.estimatedMinutes || 30) * 0.6)), xpReward: Math.max(40, Math.round((t.xpReward || 60) * 0.75)) }
+        : t),
+    }));
+    showNotif('Task simplified — easier difficulty applied.', 'success');
+    render();
+  }
+
+  function saveWeeklyReflection(text) {
+    State.set(st => ({ ...st, user: { ...st.user, weeklyReflection: text } }));
   }
 
   // ── Goal Creation Flow ────────────────────────────────────────────────────
@@ -872,6 +1101,10 @@ const App = (() => {
       draftPlan = plan;
       currentPage = 'plan-preview';
       render();
+    }).catch(() => {
+      currentPage = 'new-goal';
+      showNotif('Plan generation failed — try again', 'error');
+      render();
     });
   }
 
@@ -896,6 +1129,8 @@ const App = (() => {
     draftPlan = null;
     currentPage = 'home';
     showNotif(`🚀 Quest approved! ${milestones.length} worlds, ${tasks.length} tasks ready.`);
+    // Request notification permission on first goal approval
+    requestNotifPermission();
   }
 
   function optimizePlan(modifier) {
@@ -905,6 +1140,10 @@ const App = (() => {
       draftPlan = plan;
       draftOptimizing = false;
       currentPage = 'plan-preview';
+      render();
+    }).catch(() => {
+      draftOptimizing = false;
+      showNotif('Optimization failed — try again', 'error');
       render();
     });
   }
@@ -934,6 +1173,245 @@ const App = (() => {
     render();
   }
 
+  // ── Obstacle Mode ("I'm Stuck") ───────────────────────────────────────────
+
+  function openObstacle(taskId) {
+    obstacleTaskId = taskId;
+    render();
+  }
+
+  function closeObstacle() {
+    obstacleTaskId = null;
+    render();
+  }
+
+  function obstacleNotEnoughTime(taskId) {
+    // Split task into a smaller version: halve estimatedMinutes, mark as partial, reschedule remainder
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === taskId);
+    if (!task) { closeObstacle(); return; }
+    // Defer to tomorrow and cut time estimate in half to feel less daunting
+    const tomorrow = Decompose.addDays(new Date().toISOString().split('T')[0], 1);
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId
+        ? { ...t, deadline: tomorrow, estimatedMinutes: Math.max(15, Math.round(t.estimatedMinutes / 2)), obstacleNote: 'Shortened — pick up where you left off' }
+        : t)
+    }));
+    obstacleTaskId = null;
+    showNotif('Task shortened & moved to tomorrow — small wins count!', 'success');
+    render();
+  }
+
+  function obstacleDontUnderstand(taskId) {
+    // Swap this task for an "easy" task from the same milestone, if one exists
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === taskId);
+    if (!task) { closeObstacle(); return; }
+    const easyAlternative = s.tasks.find(t =>
+      t.id !== taskId && t.milestoneId === task.milestoneId &&
+      t.difficulty === 'easy' && t.status !== 'done'
+    );
+    obstacleTaskId = null;
+    if (easyAlternative) {
+      expandedTaskId = easyAlternative.id;
+      showNotif(`Switched to an easier task: "${easyAlternative.title}"`, 'success');
+    } else {
+      // No easy swap — surface the startTrigger prominently
+      expandedTaskId = taskId;
+      showNotif('Tip: Re-read the "Start with" step — that first physical action is the unlock.', 'success');
+    }
+    render();
+  }
+
+  function obstacleNotFeeling(taskId) {
+    // Defer 2 days, add a small activation task (5-min version)
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === taskId);
+    if (!task) { closeObstacle(); return; }
+    const twoDays = Decompose.addDays(new Date().toISOString().split('T')[0], 2);
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId
+        ? { ...t, deadline: twoDays, obstacleNote: 'Deferred — motivation check in 2 days' }
+        : t)
+    }));
+    obstacleTaskId = null;
+    showNotif('No pressure — task moved to in 2 days. Rest is part of the process.', 'success');
+    render();
+  }
+
+  function obstacleNeedResources(taskId) {
+    // Close sheet, collapse to expanded view so resources are visible
+    obstacleTaskId = null;
+    expandedTaskId = taskId;
+    showNotif('Check the Resources section below for helpful links.', 'success');
+    render();
+    setTimeout(() => {
+      const el = document.querySelector('.tc-resources');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }
+
+  function renderObstacleSheet() {
+    if (!obstacleTaskId) return '';
+    const s = State.get();
+    const task = s.tasks.find(t => t.id === obstacleTaskId);
+    if (!task) return '';
+    return `
+      <div class="obstacle-overlay" onclick="App.closeObstacle()">
+        <div class="obstacle-sheet" onclick="event.stopPropagation()">
+          <div class="obstacle-header">
+            <div class="obstacle-title">🚧 What's blocking you?</div>
+            <button class="obstacle-close" onclick="App.closeObstacle()">✕</button>
+          </div>
+          <div class="obstacle-task-name">"${h(task.title)}"</div>
+          <div class="obstacle-options">
+            <button class="obstacle-option" onclick="App.obstacleNotEnoughTime('${task.id}')">
+              <span class="obstacle-option-icon">⏱</span>
+              <div class="obstacle-option-body">
+                <div class="obstacle-option-title">Not enough time right now</div>
+                <div class="obstacle-option-hint">Shorten it &amp; move to tomorrow</div>
+              </div>
+            </button>
+            <button class="obstacle-option" onclick="App.obstacleDontUnderstand('${task.id}')">
+              <span class="obstacle-option-icon">🤔</span>
+              <div class="obstacle-option-body">
+                <div class="obstacle-option-title">I don't understand what to do</div>
+                <div class="obstacle-option-hint">Swap for an easier task or revisit the start trigger</div>
+              </div>
+            </button>
+            <button class="obstacle-option" onclick="App.obstacleNotFeeling('${task.id}')">
+              <span class="obstacle-option-icon">😮‍💨</span>
+              <div class="obstacle-option-body">
+                <div class="obstacle-option-title">Not feeling motivated today</div>
+                <div class="obstacle-option-hint">Defer 2 days — rest is real progress</div>
+              </div>
+            </button>
+            <button class="obstacle-option" onclick="App.obstacleNeedResources('${task.id}')">
+              <span class="obstacle-option-icon">🔗</span>
+              <div class="obstacle-option-body">
+                <div class="obstacle-option-title">I need a resource or example</div>
+                <div class="obstacle-option-hint">Jump to resources &amp; community links</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── 7-Day Calibration Modal ──────────────────────────────────────────────
+
+  function dismissCalibration() {
+    showCalibration = false;
+    const today = new Date().toISOString().split('T')[0];
+    State.set(st => ({ ...st, user: { ...st.user, lastCalibrationDate: today } }));
+    render();
+  }
+
+  function calibrateReducePace() {
+    // Defer all pending tasks by 2 days and mark calibration done
+    const today = new Date().toISOString().split('T')[0];
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t =>
+        t.status !== 'done'
+          ? { ...t, deadline: Decompose.addDays(t.deadline || today, 2) }
+          : t
+      ),
+      user: { ...st.user, lastCalibrationDate: today, calibrationChoice: 'reduced' },
+    }));
+    showCalibration = false;
+    showNotif('Plan relaxed — tasks spread out by 2 days.', 'success');
+    render();
+  }
+
+  function calibrateKeepPace() {
+    dismissCalibration();
+    showNotif("Locked in. Keep the momentum.", 'success');
+  }
+
+  function calibrateIncreasePace() {
+    // Pull all pending tasks 1 day earlier (min: today)
+    const today = new Date().toISOString().split('T')[0];
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => {
+        if (t.status === 'done') return t;
+        const earlier = Decompose.addDays(t.deadline || today, -1);
+        return { ...t, deadline: earlier < today ? today : earlier };
+      }),
+      user: { ...st.user, lastCalibrationDate: today, calibrationChoice: 'boosted' },
+    }));
+    showCalibration = false;
+    showNotif('Pace increased — tasks pulled forward!', 'success');
+    render();
+  }
+
+  function renderCalibrationModal() {
+    if (!showCalibration) return '';
+    const s = State.get();
+    const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+    if (!goal) return '';
+
+    // Compute 7-day stats
+    const cutoff = Decompose.addDays(new Date().toISOString().split('T')[0], -7);
+    const goalTasks = s.tasks.filter(t => t.goalId === goal.id);
+    const dueLast7 = goalTasks.filter(t => t.deadline && t.deadline >= cutoff);
+    const doneLast7 = dueLast7.filter(t => t.status === 'done');
+    const rate = dueLast7.length ? Math.round((doneLast7.length / dueLast7.length) * 100) : 0;
+
+    const rateLabel = rate >= 75 ? '🔥 Strong start!' : rate >= 40 ? '👍 Decent progress' : '😅 Rough week';
+    const suggestion = rate >= 75
+      ? 'Crushing it — consider raising the bar.'
+      : rate < 40
+      ? 'Plan may be too dense. Breathing room helps.'
+      : 'Pace looks about right. Keep going.';
+
+    return `
+      <div class="calibration-overlay" onclick="App.dismissCalibration()">
+        <div class="calibration-modal" onclick="event.stopPropagation()">
+          <div class="cal-header">
+            <div class="cal-title">📊 7-Day Check-In</div>
+            <button class="obstacle-close" onclick="App.dismissCalibration()">✕</button>
+          </div>
+          <div class="cal-goal-name">"${h(goal.title)}"</div>
+
+          <div class="cal-stats">
+            <div class="cal-stat">
+              <div class="cal-stat-num">${doneLast7.length}<span class="cal-stat-den">/${dueLast7.length}</span></div>
+              <div class="cal-stat-label">tasks done</div>
+            </div>
+            <div class="cal-stat">
+              <div class="cal-stat-num">${rate}<span class="cal-stat-den">%</span></div>
+              <div class="cal-stat-label">completion</div>
+            </div>
+            <div class="cal-stat">
+              <div class="cal-stat-num">${s.user.streak || 0}</div>
+              <div class="cal-stat-label">day streak</div>
+            </div>
+          </div>
+
+          <div class="cal-verdict">${rateLabel} — ${suggestion}</div>
+
+          <div class="cal-actions">
+            <button class="cal-btn cal-btn-reduce" onclick="App.calibrateReducePace()">
+              <span>🐢</span>
+              <div><div class="cal-btn-title">Ease up</div><div class="cal-btn-hint">Spread tasks out</div></div>
+            </button>
+            <button class="cal-btn cal-btn-keep" onclick="App.calibrateKeepPace()">
+              <span>✅</span>
+              <div><div class="cal-btn-title">Keep pace</div><div class="cal-btn-hint">Plan is working</div></div>
+            </button>
+            <button class="cal-btn cal-btn-boost" onclick="App.calibrateIncreasePace()">
+              <span>🚀</span>
+              <div><div class="cal-btn-title">Speed up</div><div class="cal-btn-hint">Pull tasks forward</div></div>
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
   // ── Task Completion ───────────────────────────────────────────────────────
 
   function completeTask(taskId, event) {
@@ -954,11 +1432,38 @@ const App = (() => {
 
     const updatedTasks = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done', completedAt: new Date().toISOString() } : t);
     const result = Gamification.completeTask(s.user, task, updatedTasks, s.milestones);
-    let { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus } = result;
+    let { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus, seasonalEarned, seasonalQuest } = result;
 
     const updatedMilestones = s.milestones.map(m => ({
       ...m, progress: Gamification.getMilestoneProgress(m.id, updatedTasks),
     }));
+
+    // Detect newly-completed milestones for certificate
+    const justCompletedMilestone = updatedMilestones.find(m =>
+      m.progress === 100 && !(s.milestones.find(om => om.id === m.id) || {}).completedAt
+    );
+    if (justCompletedMilestone) {
+      State.set(st => ({
+        ...st,
+        milestones: st.milestones.map(m =>
+          m.id === justCompletedMilestone.id && !m.completedAt
+            ? { ...m, completedAt: new Date().toISOString() }
+            : m
+        ),
+      }));
+      setTimeout(() => showCertificate('milestone', justCompletedMilestone), 1800);
+    }
+
+    // Detect goal completion
+    const goalDone = updatedTasks.filter(t => t.goalId === (s.goals.find(g => g.id === s.currentGoalId) || s.goals[0])?.id).every(t => t.status === 'done');
+    const currentGoal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+    if (goalDone && currentGoal && !currentGoal.completedAt) {
+      State.set(st => ({
+        ...st,
+        goals: st.goals.map(g => g.id === currentGoal.id ? { ...g, completedAt: new Date().toISOString() } : g),
+      }));
+      setTimeout(() => showCertificate('goal', currentGoal), 2400);
+    }
 
     // Track active history for streak calendar
     const today = new Date().toISOString().split('T')[0];
@@ -992,6 +1497,7 @@ const App = (() => {
 
     // Notification
     if (leveledUp) showNotif(`🎉 Level Up → ${levelInfo.current.title} (Lv.${levelInfo.current.level})`);
+    else if (seasonalEarned && seasonalQuest) showNotif(`${seasonalQuest.icon} Seasonal Quest Complete: ${seasonalQuest.title}!`);
     else if (newBadges.length) showNotif(`🏆 ${newBadges[0].icon} ${newBadges[0].title} earned!`);
     else render();
 
@@ -1000,6 +1506,125 @@ const App = (() => {
 
     // Show difficulty reflection after XP animation
     setTimeout(() => { showReflection = taskId; render(); }, 1400);
+  }
+
+  // ── Achievement Certificate ───────────────────────────────────────────────
+
+  let certificateData = null;   // { type: 'milestone'|'goal', item, date }
+
+  function showCertificate(type, item) {
+    certificateData = { type, item, date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) };
+    render();
+  }
+
+  function dismissCertificate() {
+    certificateData = null;
+    render();
+  }
+
+  function downloadCertificate() {
+    if (!certificateData) return;
+    const canvas = document.getElementById('cert-canvas');
+    if (!canvas) return;
+    const link = document.createElement('a');
+    link.download = `goalquest-certificate-${Date.now()}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  function renderCertificateCanvas(type, item, date) {
+    // Drawn into a hidden canvas, returned as data URL
+    const w = 800, h = 520;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#0a0e1a';
+    ctx.fillRect(0, 0, w, h);
+
+    // Border glow
+    const grad = ctx.createLinearGradient(0, 0, w, h);
+    grad.addColorStop(0, '#818cf8');
+    grad.addColorStop(0.5, '#6ee7b7');
+    grad.addColorStop(1, '#fbbf24');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
+
+    // Inner border
+    ctx.strokeStyle = 'rgba(129,140,248,0.25)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(18, 18, w - 36, h - 36);
+
+    // Logo text
+    ctx.font = 'bold 22px Inter, sans-serif';
+    ctx.fillStyle = '#818cf8';
+    ctx.textAlign = 'center';
+    ctx.fillText('GoalQuest', w / 2, 70);
+
+    // Title
+    ctx.font = 'bold 36px Inter, sans-serif';
+    ctx.fillStyle = '#f1f5f9';
+    ctx.fillText(type === 'goal' ? 'Quest Complete!' : 'Milestone Achieved!', w / 2, 160);
+
+    // Subtitle
+    ctx.font = '18px Inter, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText(type === 'goal' ? 'You successfully completed your goal:' : 'You reached a major milestone:', w / 2, 210);
+
+    // Item name — wrap if long
+    const name = (item.title || '').slice(0, 80);
+    ctx.font = 'bold 24px Inter, sans-serif';
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillText(name, w / 2, 270);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(129,140,248,0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(120, 310); ctx.lineTo(w - 120, 310);
+    ctx.stroke();
+
+    // Date
+    ctx.font = '15px Inter, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText(date, w / 2, 345);
+
+    // Stars decoration
+    ctx.font = '28px serif';
+    ctx.fillText('★  ★  ★', w / 2, 410);
+
+    // Footer
+    ctx.font = '12px Inter, sans-serif';
+    ctx.fillStyle = '#334155';
+    ctx.fillText('altonka.github.io/goalquest', w / 2, 475);
+
+    return canvas.toDataURL('image/png');
+  }
+
+  function renderCertificateModal() {
+    if (!certificateData) return '';
+    const { type, item, date } = certificateData;
+    const dataUrl = renderCertificateCanvas(type, item, date);
+    const emoji = type === 'goal' ? '🏆' : '🎖️';
+    const headline = type === 'goal' ? 'Quest Complete!' : 'Milestone Achieved!';
+
+    return `
+      <div class="cert-overlay" onclick="App.dismissCertificate()">
+        <div class="cert-modal" onclick="event.stopPropagation()">
+          <div class="cert-emoji">${emoji}</div>
+          <div class="cert-headline">${headline}</div>
+          <div class="cert-name">${h(item.title || '')}</div>
+          <div class="cert-date">${date}</div>
+          <canvas id="cert-canvas" width="800" height="520" style="display:none;"></canvas>
+          <img class="cert-preview" src="${dataUrl}" alt="Certificate preview">
+          <div class="cert-actions">
+            <button class="btn btn-ghost" onclick="App.dismissCertificate()">Close</button>
+            <button class="btn btn-primary" onclick="App.downloadCertificate()">⬇ Download PNG</button>
+          </div>
+        </div>
+      </div>`;
   }
 
   // ── Data Export / Import ──────────────────────────────────────────────────
@@ -1026,8 +1651,17 @@ const App = (() => {
       reader.onload = (ev) => {
         try {
           const parsed = JSON.parse(ev.target.result);
-          if (!parsed.goals || !parsed.tasks) throw new Error('Invalid format');
-          State.set(parsed);
+          if (!Array.isArray(parsed.goals) || !Array.isArray(parsed.tasks)) throw new Error('Invalid format');
+          State.set(s => ({
+            ...s,
+            goals:         parsed.goals,
+            milestones:    Array.isArray(parsed.milestones)  ? parsed.milestones  : [],
+            tasks:         parsed.tasks,
+            nodes:         Array.isArray(parsed.nodes)       ? parsed.nodes       : [],
+            stepProgress:  parsed.stepProgress && typeof parsed.stepProgress === 'object' ? parsed.stepProgress : {},
+            currentGoalId: parsed.currentGoalId ?? null,
+            user:          parsed.user && typeof parsed.user === 'object' ? { ...s.user, ...parsed.user } : s.user,
+          }));
           showNotif('✓ Data imported successfully');
           render();
         } catch {
@@ -1047,6 +1681,60 @@ const App = (() => {
     if (!used) { showNotif('No freezes left', 'error'); return; }
     State.set({ user });
     showNotif('🧊 Streak freeze used — streak protected!');
+  }
+
+  function switchGoal(goalId) {
+    State.set(st => ({ ...st, currentGoalId: goalId }));
+    expandedTaskId = null;
+    render();
+  }
+
+  function performPrestige() {
+    const s = State.get();
+    if (!Gamification.canPrestige(s.user)) return;
+    if (!confirm('Prestige resets your XP and level to 1 but keeps all badges and your streak. Continue?')) return;
+    const newUser = Gamification.prestige(s.user);
+    State.set(st => ({ ...st, user: newUser }));
+    const title = Gamification.getPrestigeTitle(newUser);
+    showNotif(`✦ Prestige ${newUser.prestigeLevel}! You are now: ${title}`);
+    render();
+  }
+
+  // ── PWA Notifications ────────────────────────────────────────────────────
+
+  function requestNotifPermission() {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().then(perm => {
+        if (perm === 'granted') scheduleReminder();
+      });
+    } else if (Notification.permission === 'granted') {
+      scheduleReminder();
+    }
+  }
+
+  function scheduleReminder() {
+    // Fire a local notification at 9 AM tomorrow if the user hasn't opened the app
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const now = new Date();
+    const next9am = new Date(now);
+    next9am.setDate(now.getDate() + 1);
+    next9am.setHours(9, 0, 0, 0);
+    const delay = next9am.getTime() - now.getTime();
+    setTimeout(() => {
+      const s = State.get();
+      const today = new Date().toISOString().split('T')[0];
+      if (s.user && s.user.lastActive === today) return; // Already active today
+      const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+      if (!goal) return;
+      new Notification('GoalQuest — Daily Check-in', {
+        body: `Your quest awaits: "${goal.title}". Let's keep the streak alive!`,
+        icon: '/goalquest/icons/icon-192.png',
+        badge: '/goalquest/icons/icon-192.png',
+        tag: 'goalquest-daily',
+      });
+      scheduleReminder(); // Reschedule for the next day
+    }, delay);
   }
 
   // ── Adaptive Reschedule ───────────────────────────────────────────────────
@@ -1073,9 +1761,10 @@ const App = (() => {
 
   function renderBottomNav() {
     const items = [
-      { id: 'home',    icon: 'home', label: 'Today' },
-      { id: 'map',     icon: 'map',  label: 'Map' },
-      { id: 'profile', icon: 'user', label: 'Profile' },
+      { id: 'home',    icon: 'home',            label: 'Today' },
+      { id: 'map',     icon: 'map',             label: 'Map' },
+      { id: 'review',  icon: 'calendar-check',  label: 'Review' },
+      { id: 'profile', icon: 'user',            label: 'Profile' },
     ];
     return `
       <nav class="bottom-nav">
@@ -1279,7 +1968,7 @@ const App = (() => {
           <div class="preview-section-label">KEY RESOURCES</div>
           <div class="preview-resources">
             ${keyResources.map(r => `
-              <a class="preview-resource" href="${h(r.url || '#')}" target="_blank" rel="noopener noreferrer">
+              <a class="preview-resource" href="${safeUrl(r.url)}" target="_blank" rel="noopener noreferrer">
                 🔗 ${h(r.label)}
               </a>`).join('')}
           </div>
@@ -1331,6 +2020,7 @@ const App = (() => {
       if      (currentPage === 'home')    pageHtml = renderHome();
       else if (currentPage === 'map')     pageHtml = renderMap();
       else if (currentPage === 'profile') pageHtml = renderProfile();
+      else if (currentPage === 'review')  pageHtml = renderReview();
       else pageHtml = renderHome();
 
       app.innerHTML = `
@@ -1338,10 +2028,10 @@ const App = (() => {
           ${renderSidebar(s.user)}
           <div class="main-content">${pageHtml}</div>
         </div>
-      ` + renderNotif();
+      ` + renderObstacleSheet() + renderCalibrationModal() + renderCertificateModal() + renderNotif();
     }
 
-    if (typeof lucide !== 'undefined') lucide.createIcons();
+    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [document.getElementById('app')] });
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -1371,17 +2061,35 @@ const App = (() => {
     if (totalDone > 0 && totalDone % 3 === 0) showWhyReminder = true;
     if (comebackMode) showWhyReminder = true;
 
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-      if (currentPage === 'focus') {
-        if (e.code === 'Space' && e.target === document.body) {
-          e.preventDefault();
-          toggleFocusTimer();
-        } else if (e.code === 'Escape') {
-          exitFocus();
-        }
+    // 7-day calibration: fire once after first 7 days of earliest goal
+    if (s.goals.length && !s.user.lastCalibrationDate) {
+      const today = new Date().toISOString().split('T')[0];
+      const earliest = s.goals.reduce((min, g) => (!min || g.createdAt < min) ? g.createdAt : min, null);
+      if (earliest) {
+        const daysSinceStart = Math.floor((Date.now() - new Date(earliest)) / 86400000);
+        if (daysSinceStart >= 7) showCalibration = true;
       }
-    });
+    }
+
+    // Keyboard shortcuts (guarded — init() called once but defensive)
+    if (!init._keyBound) {
+      init._keyBound = true;
+      document.addEventListener('keydown', (e) => {
+        if (currentPage === 'focus') {
+          if (e.code === 'Space' && e.target === document.body) {
+            e.preventDefault();
+            toggleFocusTimer();
+          } else if (e.code === 'Escape') {
+            exitFocus();
+          }
+        }
+      });
+    }
+
+    // Resume daily reminder if permission already granted
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      scheduleReminder();
+    }
 
     // Init Space background
     if (typeof Space !== 'undefined') {
@@ -1409,5 +2117,11 @@ const App = (() => {
     dismissComeback, dismissWhy,
     submitReflection, closeReflection,
     startFocus, exitFocus, toggleFocusTimer, resetFocusTimer, setFocusDuration,
+    openObstacle, closeObstacle,
+    obstacleNotEnoughTime, obstacleDontUnderstand, obstacleNotFeeling, obstacleNeedResources,
+    dismissCalibration, calibrateReducePace, calibrateKeepPace, calibrateIncreasePace,
+    reviewDefer, reviewSwapDifficulty, saveWeeklyReflection,
+    performPrestige, switchGoal,
+    showCertificate, dismissCertificate, downloadCertificate,
   };
 })();
