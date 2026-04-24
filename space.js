@@ -73,6 +73,14 @@ const Space = (() => {
   ];
 
   let asteroids = [];
+  let sunspots = [];
+
+  function initSunspots() {
+    sunspots = Array.from({ length: 4 }, () => ({
+      distFrac: rand(0.15, 0.45),
+      radFrac:  rand(0.08, 0.18),
+    }));
+  }
 
   function initAsteroids() {
     asteroids = [];
@@ -162,13 +170,13 @@ const Space = (() => {
     ctx.arc(sx, sy, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Sunspot texture
-    for (let i = 0; i < 4; i++) {
+    // Sunspot texture (positions pre-computed at init — no rand() per frame)
+    sunspots.forEach((sp, i) => {
       const angle = (i / 4) * Math.PI * 2 + T * 0.000018;
-      const dist  = r * rand(0.15, 0.45);
+      const dist  = r * sp.distFrac;
       const px    = sx + Math.cos(angle) * dist;
       const py    = sy + Math.sin(angle) * dist * 0.6;
-      const pr    = r * rand(0.08, 0.18);
+      const pr    = r * sp.radFrac;
       const tg    = ctx.createRadialGradient(px, py, 0, px, py, pr);
       tg.addColorStop(0, 'rgba(160,70,0,0.16)');
       tg.addColorStop(1, 'rgba(0,0,0,0)');
@@ -176,7 +184,7 @@ const Space = (() => {
       ctx.beginPath();
       ctx.arc(px, py, pr, 0, Math.PI * 2);
       ctx.fill();
-    }
+    });
 
     // Specular highlight
     const hg = ctx.createRadialGradient(sx - r * 0.24, sy - r * 0.24, 0, sx, sy, r * 0.72);
@@ -435,6 +443,9 @@ const Space = (() => {
     g.addColorStop(1, `hsl(${lerp(210,238,p)},58%,${lerp(2.0,4.4,p)}%)`);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
+    // Readability veil — keeps UI text legible against bright nebulae / sun
+    ctx.fillStyle = 'rgba(2,4,14,0.32)';
+    ctx.fillRect(0, 0, W, H);
   }
 
   function drawNebulae() {
@@ -644,7 +655,7 @@ const Space = (() => {
     W = canvas.width  = window.innerWidth;
     H = canvas.height = window.innerHeight;
 
-    initStars(); initNebulae(); initAsteroids();
+    initStars(); initNebulae(); initAsteroids(); initSunspots();
 
     window.addEventListener('resize',    onResize, { passive: true });
     window.addEventListener('mousemove', onMouse,  { passive: true });
