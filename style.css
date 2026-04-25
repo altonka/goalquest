@@ -2070,7 +2070,7 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
   max-width: 100%;
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 64px); /* leave room for bottom nav on mobile */
+  height: 100vh;
 }
 
 /* Header */
@@ -2134,6 +2134,7 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
   display: flex;
   overflow: auto;
   flex: 1;
+  position: relative;
 }
 
 /* Time axis */
@@ -2277,11 +2278,28 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 
 /* Responsive */
 @media (max-width: 768px) {
-  .calendar-page { height: auto; }
+  .calendar-page { height: calc(100vh - var(--nav-h)); }
   .cal-days-grid { grid-template-columns: repeat(7, minmax(80px, 1fr)); }
   .cal-day-col   { min-width: 80px; }
   .cal-time-col  { width: 44px; }
   .cal-time-slot { font-size: 0.58rem; padding-right: 5px; }
   .cal-event-title { font-size: 0.62rem; }
   .cal-event-meta  { display: none; }
+}
+
+/* 5-item bottom nav on very narrow screens */
+@media (max-width: 380px) {
+  .nav-item { padding: 6px 2px; }
+  .nav-item-label { font-size: 0.55rem; letter-spacing: 0; }
+}
+
+/* Empty week notice */
+.cal-empty-week {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; pointer-events: none; z-index: 2;
+}
+.cal-empty-week span {
+  background: rgba(9,13,40,0.80); backdrop-filter: blur(6px);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 20px; font-size: 0.82rem; color: var(--muted2);
 }

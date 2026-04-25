@@ -1148,6 +1148,8 @@ const App = (() => {
   }
 
   function optimizePlan(modifier) {
+    planChatHistory = [];
+    planChatPending = null;
     draftOptimizing = true;
     render();
     Decompose.buildPlanAI({ ...clarData, modifier }).then((plan) => {
@@ -2181,14 +2183,12 @@ const App = (() => {
         const top = (sl.startHour - START_H) * HOUR_PX;
         const heightPx = Math.max(24, (sl.endHour - sl.startHour) * HOUR_PX - 4);
         const isConflict = conflictTaskIds.has(sl.taskId);
-        const isDone = task.status === 'done';
         return `
-          <div class="cal-event cal-ai-task ${isDone ? 'cal-done' : ''} ${isConflict ? 'cal-conflict' : ''}"
+          <div class="cal-event cal-ai-task ${isConflict ? 'cal-conflict' : ''}"
                style="top:${top}px;height:${heightPx}px"
                onclick="event.stopPropagation();App.calTaskClick('${h(task.id)}')">
             <div class="cal-event-title">${h(task.title)}</div>
             <div class="cal-event-meta">${task.estimatedMinutes}m · ${task.difficulty}</div>
-            ${isDone ? '<div class="cal-done-mark">✓</div>' : ''}
             ${isConflict ? '<div class="cal-conflict-mark">⚠</div>' : ''}
           </div>`;
       }).join('');
@@ -2256,6 +2256,10 @@ const App = (() => {
         <div class="cal-grid-outer">
           ${timeAxis}
           <div class="cal-days-grid">${dayColumns}</div>
+          ${taskSlots.length === 0 && userEvents.length === 0 ? `
+          <div class="cal-empty-week">
+            <span>No tasks or events this week — click any slot to add one</span>
+          </div>` : ''}
         </div>
 
         ${calAddModal ? renderCalAddModal() : ''}
@@ -2307,7 +2311,7 @@ const App = (() => {
 
   // Calendar action handlers
 
-  function calNavWeek(dir) { calWeekOffset += dir; render(); }
+  function calNavWeek(dir) { calWeekOffset += dir; calAddModal = null; render(); }
   function calNavToday()   { calWeekOffset = 0; render(); }
 
   function calClickSlot(date, event, hourPx, startH) {
