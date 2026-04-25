@@ -179,5 +179,32 @@ const PlanChat = (() => {
     return `Here's what I'll change:\n${descs.map(d => `• ${d}`).join('\n')}\n\nReview the preview below and click Apply if it looks right.`;
   }
 
-  return { parseCommand, applyChanges, generateResponse, describeChanges };
+  // Call real AI via Vercel serverless function.
+  // Returns { assistant_message, proposed_changes, change_summary }.
+  // Throws on network or API error (caller should catch + fall back to parseCommand).
+  async function callAPI(message, plan) {
+    const res = await fetch('/api/planchat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        plan: {
+          goal: plan.goal,
+          milestones: plan.milestones,
+          tasks: plan.tasks.map(t => ({
+            id: t.id,
+            milestoneId: t.milestoneId,
+            title: t.title,
+            difficulty: t.difficulty,
+            estimatedMinutes: t.estimatedMinutes,
+            status: t.status,
+          })),
+        },
+      }),
+    });
+    if (!res.ok) throw new Error(`planchat API ${res.status}`);
+    return res.json();
+  }
+
+  return { parseCommand, applyChanges, generateResponse, describeChanges, callAPI };
 })();

@@ -29,6 +29,7 @@ const State = (() => {
     calendarEvents: [],   // { id, type:'USER_EVENT', title, date, startHour, endHour, isCompleted, isPinned }
     taskSchedules: {},    // { [taskId]: { date, startHour, endHour, isUserModified } }
     planChat: [],         // { role:'user'|'assistant'|'system', content, ts }
+    planVersions: [],     // { id, goalId, versionNumber, status, createdAt, changeSummary }
   };
 
   function load() {
@@ -45,6 +46,7 @@ const State = (() => {
       if (!saved.calendarEvents) saved.calendarEvents = [];
       if (!saved.taskSchedules) saved.taskSchedules = {};
       if (!saved.planChat) saved.planChat = [];
+      if (!saved.planVersions) saved.planVersions = [];
       return saved;
     } catch { return { ...defaults }; }
   }

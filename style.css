@@ -2129,12 +2129,25 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 }
 .cal-conflict-resolve:hover { background: rgba(251,191,36,0.12); }
 
+/* Calendar body layout: grid + sidebar */
+.cal-body-wrapper {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.cal-main-area {
+  flex: 1;
+  display: flex;
+  overflow: auto;
+  min-width: 0;
+}
+
 /* Grid outer */
 .cal-grid-outer {
   display: flex;
-  overflow: auto;
   flex: 1;
-  position: relative;
+  min-width: 0;
 }
 
 /* Time axis */
@@ -2276,9 +2289,181 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 .cal-modal-select:focus { border-color: var(--primary); }
 .cal-modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
 
-/* Responsive */
+/* Empty week notice */
+.cal-empty-week {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; pointer-events: none; z-index: 2;
+}
+.cal-empty-week span {
+  background: rgba(9,13,40,0.80); backdrop-filter: blur(6px);
+  border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 20px; font-size: 0.82rem; color: var(--muted2);
+}
+
+/* ── Calendar Sidebar ────────────────────────────────────────── */
+.cal-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: rgba(5,7,20,0.88);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: background var(--t);
+}
+body.cal-dragging .cal-sidebar {
+  background: rgba(99,102,241,0.06);
+  border-left-color: var(--primary);
+}
+.cal-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px 10px;
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted2);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.cst-count {
+  background: var(--primary-m); color: var(--primary);
+  font-size: 0.68rem; font-weight: 700;
+  border-radius: 10px; padding: 1px 7px;
+}
+.cal-sidebar-list {
+  flex: 1; overflow-y: auto; padding: 8px 0;
+}
+.cst-empty {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: 32px 16px;
+  font-size: 0.78rem; color: var(--muted2); text-align: center;
+}
+.cst-empty-icon { font-size: 1.4rem; color: var(--success); }
+.cst-group { margin-bottom: 6px; }
+.cst-group-label {
+  padding: 5px 14px 4px;
+  font-size: 0.64rem; font-weight: 700; letter-spacing: 0.04em;
+  color: var(--muted2); text-transform: uppercase;
+  border-left: 2px solid var(--primary);
+  margin: 4px 0 2px 10px;
+}
+.cst-task {
+  display: flex; align-items: flex-start; gap: 6px;
+  margin: 3px 8px; padding: 8px 8px 7px;
+  background: rgba(99,102,241,0.09);
+  border: 1px solid rgba(99,102,241,0.2);
+  border-radius: 7px;
+  cursor: grab;
+  transition: border-color var(--t), background var(--t), opacity var(--t);
+}
+.cst-task:hover {
+  border-color: rgba(99,102,241,0.45);
+  background: rgba(99,102,241,0.15);
+}
+.cst-task.cst-dragging { opacity: 0.35; }
+.cst-drag {
+  color: var(--muted2); font-size: 0.72rem; line-height: 1.4;
+  letter-spacing: -1px; flex-shrink: 0; margin-top: 1px;
+  user-select: none;
+}
+.cst-body { flex: 1; min-width: 0; }
+.cst-title {
+  font-size: 0.76rem; font-weight: 600; color: var(--text2);
+  line-height: 1.3; word-break: break-word;
+}
+.cst-meta { display: flex; gap: 5px; align-items: center; margin-top: 4px; }
+.cst-dur { font-size: 0.66rem; color: var(--muted2); }
+.cst-diff {
+  font-size: 0.6rem; font-weight: 700; padding: 1px 5px;
+  border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.cst-diff-easy    { color: var(--success); background: var(--success-l); }
+.cst-diff-core    { color: var(--accent);  background: var(--accent-l); }
+.cst-diff-stretch { color: var(--danger);  background: var(--danger-l); }
+.cst-suggest {
+  font-size: 0.62rem; color: var(--muted2);
+  margin-top: 3px; font-style: italic;
+}
+
+/* DnD — hover over day columns */
+body.cal-dragging .cal-day-body { cursor: copy; }
+body.cal-dragging .cal-day-body:hover {
+  background: rgba(99,102,241,0.07);
+}
+/* Scheduled task remove button */
+.cal-ai-task .cal-event-del {
+  position: absolute; top: 3px; right: 3px;
+  background: none; border: none;
+  color: rgba(255,255,255,0.4); font-size: 0.9rem;
+  cursor: pointer; padding: 0 2px; line-height: 1;
+  display: none;
+}
+.cal-ai-task:hover .cal-event-del { display: block; }
+
+/* ── Edit Plan Button (dashboard header) ────────────────────── */
+.quest-header-actions {
+  display: flex; align-items: center; gap: 8px;
+}
+.btn-edit-plan {
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.3);
+  color: var(--primary); font-size: 0.76rem; font-weight: 600;
+  border-radius: 8px; padding: 6px 12px;
+  cursor: pointer; font-family: inherit;
+  transition: all var(--t); white-space: nowrap;
+}
+.btn-edit-plan:hover {
+  background: rgba(99,102,241,0.22);
+  border-color: var(--primary);
+}
+
+/* ── Plan Preview — Edit Mode Badge ─────────────────────────── */
+.preview-header-badge {
+  font-size: 0.68rem; font-weight: 700; padding: 3px 9px;
+  border-radius: 20px; background: rgba(99,102,241,0.18);
+  border: 1px solid rgba(99,102,241,0.35); color: var(--primary);
+  letter-spacing: 0.04em; text-transform: uppercase;
+}
+
+/* ── Chat Loading (typing dots) ─────────────────────────────── */
+.pcp-typing {
+  display: flex; align-items: center; gap: 5px;
+  padding: 12px 14px !important;
+}
+.pcp-typing span {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--primary); opacity: 0.6;
+  animation: pcp-bounce 1.2s infinite;
+}
+.pcp-typing span:nth-child(2) { animation-delay: 0.2s; }
+.pcp-typing span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pcp-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+.pcp-send-loading {
+  cursor: not-allowed; opacity: 0.55;
+}
+.pcp-send-spin {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  animation: spin 0.7s linear infinite;
+  display: block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Responsive: hide sidebar on mobile ─────────────────────── */
 @media (max-width: 768px) {
   .calendar-page { height: calc(100vh - var(--nav-h)); }
+  .cal-body-wrapper { flex-direction: column; }
+  .cal-sidebar {
+    width: 100%; border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 220px;
+  }
+  .cal-sidebar-list { display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+  .cst-group { display: flex; flex-direction: row; margin-bottom: 0; }
+  .cst-group-label { display: none; }
+  .cst-task { flex-shrink: 0; width: 160px; margin: 4px; }
   .cal-days-grid { grid-template-columns: repeat(7, minmax(80px, 1fr)); }
   .cal-day-col   { min-width: 80px; }
   .cal-time-col  { width: 44px; }
@@ -2291,15 +2476,4 @@ button { font-family: inherit; cursor: pointer; touch-action: manipulation; }
 @media (max-width: 380px) {
   .nav-item { padding: 6px 2px; }
   .nav-item-label { font-size: 0.55rem; letter-spacing: 0; }
-}
-
-/* Empty week notice */
-.cal-empty-week {
-  position: absolute; inset: 0; display: flex; align-items: center;
-  justify-content: center; pointer-events: none; z-index: 2;
-}
-.cal-empty-week span {
-  background: rgba(9,13,40,0.80); backdrop-filter: blur(6px);
-  border: 1px solid var(--border); border-radius: 10px;
-  padding: 10px 20px; font-size: 0.82rem; color: var(--muted2);
 }
