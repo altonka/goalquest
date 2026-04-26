@@ -131,7 +131,7 @@ const App = (() => {
           <div class="sidebar-xp-bar">
             <div class="sidebar-xp-fill" style="width:${li.progress}%"></div>
           </div>
-          <div class="sidebar-streak">🔥 ${user.streak}-day streak</div>
+          <div class="sidebar-streak"><i data-lucide="flame" class="icon-sm" style="color:var(--accent)"></i> ${user.streak}-day streak</div>
         </div>
       </aside>
     `;
@@ -147,7 +147,7 @@ const App = (() => {
     return `
       <div class="stats-strip">
         <div class="strip-stat">
-          <span class="strip-val">🔥 ${user.streak}</span>
+          <span class="strip-val"><i data-lucide="flame" class="icon-md" style="color:var(--accent)"></i> ${user.streak}</span>
           <span class="strip-label">Streak</span>
         </div>
         <div class="strip-divider"></div>
@@ -180,7 +180,7 @@ const App = (() => {
           <div class="comeback-icon">👋</div>
           <h2 class="comeback-title">You're back.</h2>
           <p class="comeback-sub">You were away for <strong>${daysAway} day${daysAway > 1 ? 's' : ''}</strong>.</p>
-          ${s.user.streak > 0 ? `<p class="comeback-streak">Your 🔥 ${s.user.streak}-day streak broke.</p>` : ''}
+          ${s.user.streak > 0 ? `<p class="comeback-streak">Your <i data-lucide="flame" class="icon-sm" style="color:var(--accent)"></i> ${s.user.streak}-day streak broke.</p>` : ''}
           <p class="comeback-why">But your goal didn't change.</p>
           <div class="comeback-goal-box">"${goal.title}"</div>
           <p class="comeback-cta">One task. Restart your streak.</p>
@@ -296,8 +296,8 @@ const App = (() => {
         </div>
         ` : ''}
 
-        ${rescheduledCount > 0 ? `<div class="reschedule-notice">📅 ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled — spread across next ${Math.ceil(rescheduledCount/2)} day${rescheduledCount > 2 ? 's' : ''}</div>` : ''}
-        ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);">💡 Lighter load today — 1 task done = win</div>` : ''}
+        ${rescheduledCount > 0 ? `<div class="reschedule-notice"><i data-lucide="calendar-clock" class="icon-sm"></i> ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled — spread across next ${Math.ceil(rescheduledCount/2)} day${rescheduledCount > 2 ? 's' : ''}</div>` : ''}
+        ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);"><i data-lucide="lightbulb" class="icon-sm"></i> Lighter load today — 1 task done = win</div>` : ''}
 
         <!-- Goal bar -->
         <div class="goal-progress-strip" style="margin-bottom:16px;">
@@ -309,7 +309,7 @@ const App = (() => {
         ${quickWin && todoTasks.length > 1 ? `
         <div class="quick-win-section">
           <div class="qw-header">
-            <span class="qw-badge">⚡ QUICK WIN</span>
+            <span class="qw-badge"><i data-lucide="zap" class="icon-sm"></i> QUICK WIN</span>
             <span class="qw-sub">${quickWin.estimatedMinutes} min · zero excuses</span>
           </div>
           ${renderTaskCard(quickWin, s.user)}
@@ -360,7 +360,7 @@ const App = (() => {
           <div class="reflection-btns">
             <button class="ref-btn ref-hard"  onclick="App.submitReflection('${taskId}','hard')">😅 Too Hard</button>
             <button class="ref-btn ref-right" onclick="App.submitReflection('${taskId}','right')">👌 Just Right</button>
-            <button class="ref-btn ref-easy"  onclick="App.submitReflection('${taskId}','easy')">⚡ Too Easy</button>
+            <button class="ref-btn ref-easy"  onclick="App.submitReflection('${taskId}','easy')"><i data-lucide="zap" class="icon-sm"></i> Too Easy</button>
           </div>
           <div class="journal-field">
             <textarea id="journal-input-${taskId}" class="journal-input"
@@ -854,7 +854,7 @@ const App = (() => {
         })()}
 
         <div class="profile-stats-grid">
-          <div class="profile-stat-card"><div class="ps-val">🔥 ${u.streak}</div><div class="ps-label">Day Streak</div></div>
+          <div class="profile-stat-card"><div class="ps-val"><i data-lucide="flame" class="icon-lg" style="color:var(--accent)"></i> ${u.streak}</div><div class="ps-label">Day Streak</div></div>
           <div class="profile-stat-card"><div class="ps-val">${u.totalTasksDone || 0}</div><div class="ps-label">Tasks Done</div></div>
           <div class="profile-stat-card"><div class="ps-val">${u.perfectDays || 0}</div><div class="ps-label">Perfect Days</div></div>
           <div class="profile-stat-card"><div class="ps-val">${Gamification.getMomentumLabel(Gamification.getMomentumMultiplier(u.streak))}</div><div class="ps-label">Momentum</div></div>
@@ -862,7 +862,7 @@ const App = (() => {
 
         <div class="freeze-bar">
           <div>
-            <div class="freeze-label">🧊 Streak Freezes</div>
+            <div class="freeze-label"><i data-lucide="snowflake" class="icon-sm"></i> Streak Freezes</div>
             <div style="font-size:0.72rem;color:var(--muted);">Resets weekly · Use to skip a day</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
@@ -874,7 +874,7 @@ const App = (() => {
         </div>
 
         <div class="badges-section">
-          <h3>🏆 Badges (${earned.length}/${Gamification.BADGES.length})</h3>
+          <h3><i data-lucide="trophy" class="icon-md"></i> Badges (${earned.length}/${Gamification.BADGES.length})</h3>
           <div class="badges-grid">
             ${Gamification.BADGES.map(b => `
               <div class="badge-card ${earned.includes(b.id) ? 'earned' : 'locked'}">
@@ -888,7 +888,7 @@ const App = (() => {
 
         <!-- Streak Calendar -->
         <div class="streak-cal-section">
-          <h3>📅 Last 28 Days</h3>
+          <h3><i data-lucide="calendar" class="icon-md"></i> Last 28 Days</h3>
           <div class="streak-calendar">
             ${Gamification.buildStreakCalendar(u).map(d => `
               <div class="cal-day ${d.active ? 'active' : ''} ${d.isToday ? 'today' : ''}"
@@ -1108,7 +1108,7 @@ const App = (() => {
             <div class="q-actions">
               ${clarStep > 0 ? `<button class="btn btn-ghost" onclick="App.clarBack()">← Back</button>` : ''}
               <button class="btn btn-primary" onclick="App.clarNext()">
-                ${clarStep < QUESTIONS.length - 1 ? 'Next →' : '🚀 Generate Plan'}
+                ${clarStep < QUESTIONS.length - 1 ? 'Next →' : '<i data-lucide="rocket" class="icon-sm"></i> Generate Plan'}
               </button>
               ${!q.required ? `<button class="btn btn-ghost" onclick="App.clarSkip()">Skip</button>` : ''}
             </div>
@@ -1415,7 +1415,7 @@ const App = (() => {
       <div class="calibration-overlay" onclick="App.dismissCalibration()">
         <div class="calibration-modal" onclick="event.stopPropagation()">
           <div class="cal-header">
-            <div class="cal-title">📊 7-Day Check-In</div>
+            <div class="cal-title"><i data-lucide="bar-chart-2" class="icon-sm"></i> 7-Day Check-In</div>
             <button class="obstacle-close" onclick="App.dismissCalibration()">✕</button>
           </div>
           <div class="cal-goal-name">"${h(goal.title)}"</div>
@@ -1439,15 +1439,15 @@ const App = (() => {
 
           <div class="cal-actions">
             <button class="cal-btn cal-btn-reduce" onclick="App.calibrateReducePace()">
-              <span>🐢</span>
+              <i data-lucide="minus-circle" class="cal-btn-icon"></i>
               <div><div class="cal-btn-title">Ease up</div><div class="cal-btn-hint">Spread tasks out</div></div>
             </button>
             <button class="cal-btn cal-btn-keep" onclick="App.calibrateKeepPace()">
-              <span>✅</span>
+              <i data-lucide="check-circle" class="cal-btn-icon"></i>
               <div><div class="cal-btn-title">Keep pace</div><div class="cal-btn-hint">Plan is working</div></div>
             </button>
             <button class="cal-btn cal-btn-boost" onclick="App.calibrateIncreasePace()">
-              <span>🚀</span>
+              <i data-lucide="trending-up" class="cal-btn-icon"></i>
               <div><div class="cal-btn-title">Speed up</div><div class="cal-btn-hint">Pull tasks forward</div></div>
             </button>
           </div>
@@ -1903,12 +1903,12 @@ const App = (() => {
     const keyResources = m0Tasks.flatMap(t => t.resources || []).filter(r => r.primary).slice(0, 4);
 
     const OPTIMIZE_OPTIONS = [
-      { label: '😌 Make Easier',      modifier: 'make this plan easier with simpler tasks and reduced intensity' },
-      { label: '🔥 More Intensive',   modifier: 'make this plan more intensive with harder tasks and higher standards' },
-      { label: '⚡ Shorten Timeline', modifier: 'compress the milestones for faster completion while keeping quality' },
-      { label: '🏋️ More Practice',    modifier: 'replace theory tasks with more hands-on practice and exercises' },
-      { label: '📺 Video Resources',  modifier: 'replace reading resources with video tutorials and YouTube-based learning' },
-      { label: '🎯 Shorter Tasks',    modifier: 'break all tasks into shorter sessions under 30 minutes each' },
+      { label: '<i data-lucide="feather" class="icon-sm"></i> Make Easier',      modifier: 'make this plan easier with simpler tasks and reduced intensity' },
+      { label: '<i data-lucide="flame" class="icon-sm"></i> More Intensive',     modifier: 'make this plan more intensive with harder tasks and higher standards' },
+      { label: '<i data-lucide="zap" class="icon-sm"></i> Shorten Timeline',     modifier: 'compress the milestones for faster completion while keeping quality' },
+      { label: '<i data-lucide="dumbbell" class="icon-sm"></i> More Practice',   modifier: 'replace theory tasks with more hands-on practice and exercises' },
+      { label: '<i data-lucide="play-circle" class="icon-sm"></i> Video Resources', modifier: 'replace reading resources with video tutorials and YouTube-based learning' },
+      { label: '<i data-lucide="target" class="icon-sm"></i> Shorter Tasks',     modifier: 'break all tasks into shorter sessions under 30 minutes each' },
     ];
 
     const planLeft = `
@@ -1935,13 +1935,13 @@ const App = (() => {
           <div class="preview-goal-card">
             <div class="preview-goal-title">${h(goal.title)}</div>
             <div class="preview-goal-meta">
-              <span>📅 ${fmtDate(goal.deadline)}</span>
+              <span><i data-lucide="calendar" class="icon-xs"></i> ${fmtDate(goal.deadline)}</span>
               <span>⏱ ${goal.hoursPerWeek} hrs/week</span>
-              <span>📆 ${weeksCount} weeks</span>
+              <span>${weeksCount} weeks</span>
             </div>
             ${goal.successCriteria && goal.successCriteria !== `Successfully achieve: ${goal.title}` ? `
             <div class="preview-success">
-              <span>🎯</span>
+              <i data-lucide="target" class="icon-sm"></i>
               <span>${goal.successCriteria}</span>
             </div>` : ''}
           </div>
@@ -2002,12 +2002,12 @@ const App = (() => {
                   <span class="ptc-title">${h(t.title)}</span>
                   <span class="ptc-time">⏱ ${t.estimatedMinutes}m</span>
                 </div>
-                ${t.startTrigger ? `<div class="ptc-trigger">👉 ${h(t.startTrigger)}</div>` : ''}
+                ${t.startTrigger ? `<div class="ptc-trigger"><i data-lucide="arrow-right" class="icon-sm"></i> ${h(t.startTrigger)}</div>` : ''}
                 ${t.steps && t.steps.length ? `
                   <ul class="ptc-steps">
                     ${t.steps.slice(0, 3).map(s => `<li>${h(s)}</li>`).join('')}
                   </ul>` : ''}
-                ${t.completionCondition ? `<div class="ptc-done">✅ ${h(t.completionCondition)}</div>` : ''}
+                ${t.completionCondition ? `<div class="ptc-done"><i data-lucide="check-circle" class="icon-sm"></i> ${h(t.completionCondition)}</div>` : ''}
               </div>`;
           }).join('')}
         </div>
