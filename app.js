@@ -250,8 +250,17 @@ const App = (() => {
     const quickWin = todoTasks.find(t => t.difficulty === 'easy' && t.estimatedMinutes <= 25);
     const mainTasks = todoTasks.filter(t => t !== quickWin);
 
+    // Contextual notices (shown only when relevant)
+    const notices = [
+      rescheduledCount > 0 ? `<div class="ctx-notice"><i data-lucide="calendar-clock" class="icon-sm"></i> ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled</div>` : '',
+      adaptiveMode === 'reduced' ? `<div class="ctx-notice ctx-notice-soft"><i data-lucide="lightbulb" class="icon-sm"></i> Lighter load today — 1 task done = win</div>` : '',
+      showWhyReminder && goal.successCriteria ? `<div class="ctx-notice ctx-notice-why"><i data-lucide="heart" class="icon-sm"></i> ${h(goal.successCriteria)} <button class="ctx-dismiss" onclick="App.dismissWhy()">✕</button></div>` : '',
+    ].filter(Boolean).join('');
+
     return `
       <div class="page">
+
+        <!-- Header: greeting + quest title + actions -->
         <div class="quest-header">
           <div class="home-greeting">${greeting}</div>
           <div class="quest-header-row">
@@ -260,7 +269,9 @@ const App = (() => {
               <div class="quest-title">${h(goal.title)}</div>
             </div>
             <div class="quest-header-actions">
-              <button class="btn-edit-plan" onclick="App.openPlanEditor()" title="Edit plan with AI">✏️ Edit Plan</button>
+              <button class="btn-edit-plan" onclick="App.openPlanEditor()" title="Edit plan with AI">
+                <i data-lucide="pencil" class="icon-sm"></i> Edit Plan
+              </button>
               ${s.goals.length < 3 ? `<button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another goal">＋</button>` : ''}
             </div>
           </div>
@@ -277,58 +288,33 @@ const App = (() => {
           ${s.goals.length < 3 ? `<button class="goal-switch-add" onclick="App.nav('new-goal')">+ New</button>` : ''}
         </div>` : ''}
 
+        <!-- Compact stats row -->
         ${renderStatsStrip(s.user)}
 
-        <!-- Identity statement -->
-        ${s.user.totalTasksDone > 0 ? `
-        <div class="identity-bar">
-          <span class="identity-icon">🧠</span>
-          <span>You've completed <strong>${s.user.totalTasksDone}</strong> tasks. You're becoming <strong>${identity}</strong>.</span>
+        <!-- Contextual notices — only shown when needed -->
+        ${notices}
+
+        <!-- TODAY header + progress bar -->
+        <div class="today-header">
+          <div class="today-header-left">
+            <span class="today-title">Today</span>
+            <span class="today-count">${doneTasks.length}/${dailyTasks.length} done</span>
+          </div>
+          ${todoTasks.length ? `<span class="today-time-left">~${todoTasks.reduce((s,t)=>s+(t.estimatedMinutes||0),0)} min left</span>` : ''}
         </div>
-        ` : ''}
+        ${dailyTasks.length ? `
+        <div class="today-progress-bar">
+          <div class="today-progress-fill" style="width:${todayPct}%"></div>
+        </div>` : ''}
 
-        <!-- Why reminder -->
-        ${showWhyReminder && goal.successCriteria ? `
-        <div class="why-reminder">
-          <div class="why-label">💭 Remember why you started</div>
-          <div class="why-text">${h(goal.successCriteria)}</div>
-          <button class="why-dismiss" onclick="App.dismissWhy()">Got it ✓</button>
-        </div>
-        ` : ''}
-
-        ${rescheduledCount > 0 ? `<div class="reschedule-notice"><i data-lucide="calendar-clock" class="icon-sm"></i> ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled — spread across next ${Math.ceil(rescheduledCount/2)} day${rescheduledCount > 2 ? 's' : ''}</div>` : ''}
-        ${adaptiveMode === 'reduced' ? `<div class="reschedule-notice" style="border-color:var(--accent2);color:var(--accent2);"><i data-lucide="lightbulb" class="icon-sm"></i> Lighter load today — 1 task done = win</div>` : ''}
-
-        <!-- Goal bar -->
-        <div class="goal-progress-strip" style="margin-bottom:16px;">
-          <div class="gp-row"><span class="gp-title">Overall Progress</span><span class="gp-pct">${goalPct}%</span></div>
-          <div class="gp-bar"><div class="gp-fill" style="width:${goalPct}%"></div></div>
-        </div>
-
-        <!-- Quick Win -->
+        <!-- Quick Win — first task shown if it's a fast win -->
         ${quickWin && todoTasks.length > 1 ? `
         <div class="quick-win-section">
           <div class="qw-header">
             <span class="qw-badge"><i data-lucide="zap" class="icon-sm"></i> QUICK WIN</span>
-            <span class="qw-sub">${quickWin.estimatedMinutes} min · zero excuses</span>
+            <span class="qw-sub">${quickWin.estimatedMinutes} min</span>
           </div>
           ${renderTaskCard(quickWin, s.user)}
-        </div>
-        ` : ''}
-
-        <!-- Today header -->
-        <div class="today-header">
-          <span class="today-title">Today's Quest</span>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
-            <span class="today-count">${doneTasks.length}/${dailyTasks.length} done</span>
-            ${todoTasks.length ? `<span style="font-size:0.72rem;color:var(--muted);">~${todoTasks.reduce((s,t)=>s+(t.estimatedMinutes||0),0)} min left</span>` : ''}
-          </div>
-        </div>
-        ${dailyTasks.length ? `
-        <div class="perfect-progress">
-          <span class="pp-label">🌟 Perfect Day</span>
-          <div class="pp-bar-outer"><div class="pp-bar-inner" style="width:${todayPct}%"></div></div>
-          <span class="pp-pct">${todayPct}%</span>
         </div>
         ` : ''}
 
@@ -336,12 +322,30 @@ const App = (() => {
         ${mainTasks.length
           ? mainTasks.map(t => renderTaskCard(t, s.user)).join('')
           : todoTasks.length === 0
-            ? `<div class="all-done-card"><h3>🎉 All Done!</h3><p>Quest complete for today.<br>Streak alive — see you tomorrow!</p></div>`
+            ? `<div class="all-done-card"><h3>All done today!</h3><p>Streak alive — see you tomorrow.</p></div>`
             : ''
         }
 
         <!-- Done tasks -->
-        ${doneTasks.length ? `<div style="margin-top:8px;">${doneTasks.map(t => renderTaskCard(t, s.user)).join('')}</div>` : ''}
+        ${doneTasks.length ? `
+        <div class="done-tasks-section">
+          <div class="done-section-label">Completed</div>
+          ${doneTasks.map(t => renderTaskCard(t, s.user)).join('')}
+        </div>` : ''}
+
+        <!-- Goal progress — at bottom, not competing with tasks -->
+        <div class="goal-progress-strip home-progress-footer">
+          <div class="gp-row"><span class="gp-title">Overall: ${h(goal.title)}</span><span class="gp-pct">${goalPct}%</span></div>
+          <div class="gp-bar"><div class="gp-fill" style="width:${goalPct}%"></div></div>
+        </div>
+
+        <!-- Identity — only shown after meaningful progress -->
+        ${s.user.totalTasksDone >= 5 ? `
+        <div class="identity-bar">
+          <span>You've completed <strong>${s.user.totalTasksDone}</strong> tasks. You're becoming <strong>${identity}</strong>.</span>
+        </div>
+        ` : ''}
+
       </div>
       ${showReflection ? renderReflectionModal(showReflection) : ''}
       ${renderBottomNav()}
@@ -456,13 +460,13 @@ const App = (() => {
             <div class="tc-top-row">
               <span class="tc-diff-badge diff-${task.difficulty}">${task.difficulty}</span>
               <span class="tc-title-collapsed">${h(task.title)}</span>
-              ${task.isBoss ? '<span class="meta-pill boss-xp">⚔️ Boss</span>' : ''}
+              ${task.isBoss ? '<span class="meta-pill boss-xp"><i data-lucide="swords" class="icon-xs"></i> Boss</span>' : ''}
             </div>
             <div class="tc-bottom-row">
-              <span class="meta-pill time">⏱ ${task.estimatedMinutes}min</span>
+              <span class="meta-pill time"><i data-lucide="clock" class="icon-xs"></i> ${task.estimatedMinutes}min</span>
               <span class="meta-pill ${task.isBoss ? 'boss-xp' : 'xp'}">+${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</span>
               ${deadlineLabel}
-              <span class="btn-start">▶ Start Task</span>
+              <span class="btn-start"><i data-lucide="play" class="icon-xs"></i> Start Task</span>
             </div>
           </div>
         </div>`;
@@ -480,14 +484,14 @@ const App = (() => {
           <div>
             <span class="tc-diff-badge diff-${task.difficulty}">${task.difficulty}</span>
             <div class="tc-exp-title">${h(task.title)}</div>
-            <div class="tc-exp-meta">⏱ ${task.estimatedMinutes} min · +${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</div>
+            <div class="tc-exp-meta"><i data-lucide="clock" class="icon-xs"></i> ${task.estimatedMinutes} min · +${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</div>
           </div>
           <button class="tc-collapse-btn" onclick="App.collapseTask()">✕</button>
         </div>
 
         <!-- Start trigger -->
         <div class="tc-start-trigger">
-          <span class="tc-trigger-label">👉 Start with</span>
+          <span class="tc-trigger-label"><i data-lucide="arrow-right" class="icon-sm"></i> Start with</span>
           <span class="tc-trigger-text">${h(task.startTrigger || 'Open your materials and begin immediately')}</span>
         </div>
 
@@ -506,14 +510,14 @@ const App = (() => {
 
         <!-- Done when -->
         <div class="tc-done-when">
-          <span class="tc-done-label">✅ Done when</span>
+          <span class="tc-done-label"><i data-lucide="check-circle" class="icon-sm"></i> Done when</span>
           <span class="tc-done-text">${h(task.completionCondition || 'Task is fully completed')}</span>
         </div>
 
         <!-- Focus tip -->
         ${task.focusTip ? `
         <div class="tc-focus-tip">
-          <span class="tc-focus-icon">⏱</span>
+          <span class="tc-focus-icon"><i data-lucide="timer" class="icon-sm"></i></span>
           <span>${h(task.focusTip)}</span>
         </div>
         ` : ''}
@@ -521,7 +525,7 @@ const App = (() => {
         <!-- Resources -->
         ${task.resources && task.resources.length ? `
         <div class="tc-resources">
-          <div class="tc-section-label">🔗 Resources</div>
+          <div class="tc-section-label"><i data-lucide="link" class="icon-xs"></i> Resources</div>
           ${task.resources.map(r => `
             <a class="tc-resource ${r.primary ? 'primary' : ''}" href="${h(r.url || '#')}" target="_blank" rel="noopener noreferrer">
               ${r.primary ? '★ ' : ''}${h(r.label)}
@@ -540,11 +544,11 @@ const App = (() => {
 
         <!-- Actions -->
         <div class="tc-actions">
-          <button class="btn btn-ghost" onclick="App.startFocus('${task.id}')">⏱ Focus</button>
-          <button class="btn btn-ghost btn-stuck" onclick="App.openObstacle('${task.id}')">🚧 Stuck</button>
+          <button class="btn btn-ghost" onclick="App.startFocus('${task.id}')"><i data-lucide="timer" class="icon-sm"></i> Focus</button>
+          <button class="btn btn-ghost btn-stuck" onclick="App.openObstacle('${task.id}')"><i data-lucide="alert-triangle" class="icon-sm"></i> Stuck</button>
           <button class="btn btn-primary ${task.isBoss ? 'boss-complete-btn' : ''}"
             onclick="App.completeTask('${task.id}', event)">
-            ${task.isBoss ? '⚔️ Complete Boss' : '✓ Mark Complete'}
+            ${task.isBoss ? '<i data-lucide="swords" class="icon-sm"></i> Complete Boss' : '<i data-lucide="check" class="icon-sm"></i> Mark Complete'}
           </button>
         </div>
       </div>`;
@@ -654,17 +658,17 @@ const App = (() => {
             <div class="focus-timer-controls">
               <button class="focus-timer-btn ${focusRunning ? 'btn-timer-pause' : 'btn-timer-start'}"
                 onclick="App.toggleFocusTimer()">
-                ${timerDone ? '✓ Done!' : focusRunning ? '⏸ Pause' : startedTimer ? '▶ Resume' : '▶ Start'}
+                ${timerDone ? '<i data-lucide="check" class="icon-sm"></i> Done!' : focusRunning ? '<i data-lucide="pause" class="icon-sm"></i> Pause' : startedTimer ? '<i data-lucide="play" class="icon-sm"></i> Resume' : '<i data-lucide="play" class="icon-sm"></i> Start'}
               </button>
-              ${startedTimer && !timerDone ? `<button class="btn-timer-reset" onclick="App.resetFocusTimer()">↺ Reset</button>` : ''}
+              ${startedTimer && !timerDone ? `<button class="btn-timer-reset" onclick="App.resetFocusTimer()"><i data-lucide="rotate-ccw" class="icon-sm"></i> Reset</button>` : ''}
             </div>
-            ${timerDone ? `<div class="focus-timer-done-msg">Session complete! ✓</div>` : ''}
+            ${timerDone ? `<div class="focus-timer-done-msg">Session complete! <i data-lucide="check-circle" class="icon-sm"></i></div>` : ''}
           </div>
 
           <!-- Start trigger -->
           ${task.startTrigger ? `
           <div class="focus-trigger">
-            <span class="focus-trigger-label">👉 Start with</span>
+            <span class="focus-trigger-label"><i data-lucide="arrow-right" class="icon-sm"></i> Start with</span>
             ${h(task.startTrigger)}
           </div>
           ` : ''}
@@ -688,7 +692,7 @@ const App = (() => {
         <div class="focus-footer">
           <button class="focus-complete-btn ${task.isBoss ? 'boss-btn' : ''}"
             onclick="App.completeTask('${task.id}', event)">
-            ${task.isBoss ? '⚔️ Complete Boss' : '✓ Mark Complete'}
+            ${task.isBoss ? '<i data-lucide="swords" class="icon-sm"></i> Complete Boss' : '<i data-lucide="check" class="icon-sm"></i> Mark Complete'}
           </button>
           <div class="focus-keyboard-hint">Space to pause · Esc to exit</div>
         </div>
@@ -760,7 +764,7 @@ const App = (() => {
     const isBoss = node.isBoss;
     const icon = stateClass === 'complete' ? '✓'
       : stateClass === 'locked' ? '<i data-lucide="lock"></i>'
-      : isBoss ? '⚔️'
+      : isBoss ? '<i data-lucide="swords"></i>'
       : node.globalIndex + 1;
 
     return `
@@ -772,7 +776,7 @@ const App = (() => {
             ${stateClass === 'partial' ? `<div class="node-partial-ring"></div>` : ''}
             ${icon}
           </div>
-          <div class="node-label">${h(node.title.replace('⚔️ ', ''))}</div>
+          <div class="node-label">${h(node.title)}</div>
         </div>
       </div>
     `;
@@ -1305,34 +1309,34 @@ const App = (() => {
       <div class="obstacle-overlay" onclick="App.closeObstacle()">
         <div class="obstacle-sheet" onclick="event.stopPropagation()">
           <div class="obstacle-header">
-            <div class="obstacle-title">🚧 What's blocking you?</div>
+            <div class="obstacle-title"><i data-lucide="alert-triangle" class="icon-md"></i> What's blocking you?</div>
             <button class="obstacle-close" onclick="App.closeObstacle()">✕</button>
           </div>
           <div class="obstacle-task-name">"${h(task.title)}"</div>
           <div class="obstacle-options">
             <button class="obstacle-option" onclick="App.obstacleNotEnoughTime('${task.id}')">
-              <span class="obstacle-option-icon">⏱</span>
+              <span class="obstacle-option-icon"><i data-lucide="clock" class="icon-md"></i></span>
               <div class="obstacle-option-body">
                 <div class="obstacle-option-title">Not enough time right now</div>
                 <div class="obstacle-option-hint">Shorten it &amp; move to tomorrow</div>
               </div>
             </button>
             <button class="obstacle-option" onclick="App.obstacleDontUnderstand('${task.id}')">
-              <span class="obstacle-option-icon">🤔</span>
+              <span class="obstacle-option-icon"><i data-lucide="help-circle" class="icon-md"></i></span>
               <div class="obstacle-option-body">
                 <div class="obstacle-option-title">I don't understand what to do</div>
                 <div class="obstacle-option-hint">Swap for an easier task or revisit the start trigger</div>
               </div>
             </button>
             <button class="obstacle-option" onclick="App.obstacleNotFeeling('${task.id}')">
-              <span class="obstacle-option-icon">😮‍💨</span>
+              <span class="obstacle-option-icon"><i data-lucide="battery-low" class="icon-md"></i></span>
               <div class="obstacle-option-body">
                 <div class="obstacle-option-title">Not feeling motivated today</div>
                 <div class="obstacle-option-hint">Defer 2 days — rest is real progress</div>
               </div>
             </button>
             <button class="obstacle-option" onclick="App.obstacleNeedResources('${task.id}')">
-              <span class="obstacle-option-icon">🔗</span>
+              <span class="obstacle-option-icon"><i data-lucide="link" class="icon-md"></i></span>
               <div class="obstacle-option-body">
                 <div class="obstacle-option-title">I need a resource or example</div>
                 <div class="obstacle-option-hint">Jump to resources &amp; community links</div>
@@ -1936,7 +1940,7 @@ const App = (() => {
             <div class="preview-goal-title">${h(goal.title)}</div>
             <div class="preview-goal-meta">
               <span><i data-lucide="calendar" class="icon-xs"></i> ${fmtDate(goal.deadline)}</span>
-              <span>⏱ ${goal.hoursPerWeek} hrs/week</span>
+              <span><i data-lucide="clock" class="icon-xs"></i> ${goal.hoursPerWeek} hrs/week</span>
               <span>${weeksCount} weeks</span>
             </div>
             ${goal.successCriteria && goal.successCriteria !== `Successfully achieve: ${goal.title}` ? `
@@ -2000,7 +2004,7 @@ const App = (() => {
                 <div class="ptc-top">
                   <span class="ptc-diff" style="background:${db};color:${dc};">${t.difficulty}</span>
                   <span class="ptc-title">${h(t.title)}</span>
-                  <span class="ptc-time">⏱ ${t.estimatedMinutes}m</span>
+                  <span class="ptc-time"><i data-lucide="clock" class="icon-xs"></i> ${t.estimatedMinutes}m</span>
                 </div>
                 ${t.startTrigger ? `<div class="ptc-trigger"><i data-lucide="arrow-right" class="icon-sm"></i> ${h(t.startTrigger)}</div>` : ''}
                 ${t.steps && t.steps.length ? `
@@ -2018,7 +2022,7 @@ const App = (() => {
           <div class="preview-resources">
             ${keyResources.map(r => `
               <a class="preview-resource" href="${safeUrl(r.url)}" target="_blank" rel="noopener noreferrer">
-                🔗 ${h(r.label)}
+                <i data-lucide="external-link" class="icon-xs"></i> ${h(r.label)}
               </a>`).join('')}
           </div>
         </div>` : ''}
