@@ -1581,6 +1581,26 @@ body.cal-dragging .cal-sidebar {
 body.cal-dragging .cal-day-body { cursor: copy; }
 body.cal-dragging .cal-day-body:hover { background: rgba(79,70,229,0.04); }
 
+/* Drop position indicator */
+.cal-drop-indicator {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: var(--primary); border-radius: 2px; pointer-events: none; z-index: 20;
+}
+.cal-drop-indicator::before {
+  content: ''; position: absolute; left: -4px; top: -4px;
+  width: 10px; height: 10px; border-radius: 50%; background: var(--primary);
+}
+
+/* Current time line */
+.cal-now-line {
+  position: absolute; left: 0; right: 0; height: 2px;
+  background: #ef4444; border-radius: 2px; pointer-events: none; z-index: 10;
+}
+.cal-now-line::before {
+  content: ''; position: absolute; left: -4px; top: -4px;
+  width: 10px; height: 10px; border-radius: 50%; background: #ef4444;
+}
+
 /* Empty week */
 .cal-empty-week {
   position: absolute; inset: 0; display: flex;

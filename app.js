@@ -2889,6 +2889,15 @@ const App = (() => {
       const cap = getDayCapacity(date);
       const capClass = cap.usedPct >= 100 ? 'cap-over' : cap.usedPct >= 80 ? 'cap-warn' : 'cap-ok';
 
+      const nowLine = (() => {
+        if (!isToday) return '';
+        const now = new Date();
+        const nowH = now.getHours() + now.getMinutes() / 60;
+        if (nowH < START_H || nowH >= END_H) return '';
+        const topPx = Math.round((nowH - START_H) * HOUR_PX);
+        return `<div class="cal-now-line" style="top:${topPx}px"></div>`;
+      })();
+
       const taskBlocks = daySlots.map(sl => {
         const task = s.tasks.find(t => t.id === sl.taskId);
         if (!task) return '';
@@ -2936,10 +2945,11 @@ const App = (() => {
           </div>
           <div class="cal-day-body" style="height:${TOTAL_H * HOUR_PX}px;position:relative;"
                onclick="App.calClickSlot('${date}',event,${HOUR_PX},${START_H})"
-               ondragover="event.preventDefault()"
+               ondragover="App.calDragOver(event,'${date}',${HOUR_PX},${START_H})"
                ondrop="App.calDropOnDay(event,'${date}',${HOUR_PX},${START_H})">
             ${Array.from({ length: TOTAL_H }, (_, i) => `
               <div class="cal-hour-line" style="top:${i * HOUR_PX}px"></div>`).join('')}
+            ${nowLine}
             ${taskBlocks}
             ${eventBlocks}
           </div>
@@ -3115,7 +3125,8 @@ const App = (() => {
     const body = event.currentTarget;
     const rect = body.getBoundingClientRect();
     const relY = event.clientY - rect.top;
-    const clickedH = startH + Math.floor(relY / hourPx);
+    const rawH = startH + relY / hourPx;
+    const clickedH = Math.round(rawH * 2) / 2;
     calAddModal = { date, startHour: Math.max(7, Math.min(21, clickedH)) };
     render();
   }
@@ -3182,7 +3193,34 @@ const App = (() => {
   }
 
   function calResolveConflicts() {
-    showNotif('Drag conflicting tasks to a different time slot', 'error');
+    const s = State.get();
+    const baseDate = new Date();
+    baseDate.setDate(baseDate.getDate() + calWeekOffset * 7);
+    const weekDates = CalendarHelper.getWeekDates(CalendarHelper.getWeekStart(baseDate));
+    const activeGoalIds = new Set(s.goals.filter(g => (g.status||'active') !== 'paused' && !g.completedAt).map(g => g.id));
+    const activeTasks = s.tasks.filter(t => activeGoalIds.has(t.goalId) && t.status !== 'done');
+    const taskSlots = CalendarHelper.getTaskSlots(activeTasks, s.taskSchedules || {}, weekDates);
+    const userEvents = (s.calendarEvents || []).filter(ev => weekDates.includes(ev.date));
+    const conflicts = CalendarHelper.findConflicts(taskSlots, userEvents);
+    if (!conflicts.length) { showNotif('No conflicts to resolve'); return; }
+    const newSchedules = { ...s.taskSchedules };
+    let resolved = 0;
+    for (const { slotTaskId, eventId } of conflicts) {
+      const slot = taskSlots.find(sl => sl.taskId === slotTaskId);
+      const ev = userEvents.find(e => e.id === eventId);
+      if (!slot || !ev) continue;
+      const suggestion = CalendarHelper.suggestReschedule(slot, ev);
+      newSchedules[slotTaskId] = {
+        date: suggestion.date,
+        startHour: Math.round(suggestion.startHour * 2) / 2,
+        endHour: Math.round(suggestion.endHour * 2) / 2,
+        isUserModified: false,
+      };
+      resolved++;
+    }
+    State.set(st => ({ ...st, taskSchedules: newSchedules }));
+    showNotif(`Resolved ${resolved} conflict${resolved !== 1 ? 's' : ''} — tasks moved after events`);
+    render();
   }
 
   function calUnscheduleTask(taskId) {
@@ -3209,7 +3247,24 @@ const App = (() => {
   function calDragEnd(event) {
     event.target.classList.remove('cst-dragging');
     document.body.classList.remove('cal-dragging');
+    document.querySelectorAll('.cal-drop-indicator').forEach(el => el.remove());
     calDragData = null;
+  }
+
+  function calDragOver(event, date, hourPx, startH) {
+    event.preventDefault();
+    if (!calDragData) return;
+    const body = event.currentTarget;
+    const rect = body.getBoundingClientRect();
+    const relY = Math.max(0, event.clientY - rect.top);
+    const rawH = startH + relY / hourPx;
+    const snapH = Math.round(rawH * 2) / 2;
+    const topPx = Math.round((snapH - startH) * hourPx);
+    document.querySelectorAll('.cal-drop-indicator').forEach(el => el.remove());
+    const line = document.createElement('div');
+    line.className = 'cal-drop-indicator';
+    line.style.top = topPx + 'px';
+    body.appendChild(line);
   }
 
   function calDropOnDay(event, date, hourPx, startH) {
@@ -3220,7 +3275,8 @@ const App = (() => {
     const body = event.currentTarget;
     const rect = body.getBoundingClientRect();
     const relY = event.clientY - rect.top;
-    const hour = Math.max(startH, Math.min(21, Math.floor(startH + relY / hourPx)));
+    const rawH = startH + relY / hourPx;
+    const hour = Math.max(startH, Math.min(21, Math.round(rawH * 2) / 2));
 
     const s = State.get();
     const task = s.tasks.find(t => t.id === taskId);
@@ -3584,7 +3640,7 @@ const App = (() => {
     calNavWeek, calNavToday, calClickSlot, calCloseModal,
     calAddEvent, calEventClick, calDeleteEvent, calTaskClick, calResolveConflicts,
     calUnscheduleTask,
-    calDragStart, calDragEnd, calDropOnDay, calDropOnSidebar,
+    calDragStart, calDragEnd, calDragOver, calDropOnDay, calDropOnSidebar,
     calAutoSchedule, calOpenAvailability, calCloseAvailability, calSaveAvailability,
   };
 })();
