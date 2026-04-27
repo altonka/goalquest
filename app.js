@@ -35,6 +35,7 @@ const App = (() => {
   let calWeekOffset = 0;          // 0 = current week, ±N = weeks forward/back
   let calAddModal = null;         // { date, startHour } — add-event modal open
   let calDragData = null;         // { taskId, fromCalendar } — active DnD drag
+  let calAvailModal = false;      // availability settings modal open
 
   // ── Focus Mode State ──────────────────────────────────────────────────────
   let focusTaskId = null;
@@ -48,7 +49,8 @@ const App = (() => {
   function nav(page) {
     currentPage = page;
     activeModal = null;
-    if (page !== 'calendar') { calAddModal = null; calDragData = null; }
+    if (page === 'new-goal') { clarStep = 0; clarData = {}; }
+    if (page !== 'calendar') { calAddModal = null; calDragData = null; calAvailModal = false; }
     if (page !== 'plan-preview') {
       planChatHistory = [];
       planChatPending = null;
@@ -108,11 +110,12 @@ const App = (() => {
   function renderSidebar(user) {
     const li = Gamification.getLevelInfo(user.xp);
     const items = [
-      { id: 'home',     icon: 'home',           label: 'Today' },
-      { id: 'map',      icon: 'map',            label: 'Map' },
-      { id: 'calendar', icon: 'calendar',       label: 'Calendar' },
-      { id: 'review',   icon: 'calendar-check', label: 'Review' },
-      { id: 'profile',  icon: 'user',           label: 'Profile' },
+      { id: 'home',          icon: 'home',           label: 'Today' },
+      { id: 'goals-manager', icon: 'target',         label: 'Goals' },
+      { id: 'map',           icon: 'map',            label: 'Map' },
+      { id: 'calendar',      icon: 'calendar',       label: 'Calendar' },
+      { id: 'review',        icon: 'calendar-check', label: 'Review' },
+      { id: 'profile',       icon: 'user',           label: 'Profile' },
     ];
     return `
       <aside class="sidebar" role="navigation" aria-label="Main navigation">
@@ -199,6 +202,101 @@ const App = (() => {
     render();
   }
 
+  // ── Multi-Goal Home ───────────────────────────────────────────────────────
+
+  function renderMultiGoalHome(s, activeGoals) {
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+
+    // Aggregate today's tasks across all active goals
+    const allDailyTasks = [];
+    activeGoals.forEach(g => {
+      const goalTasks = s.tasks.filter(t => t.goalId === g.id);
+      const daily = Decompose.selectDailyTasks(goalTasks, g.hoursPerWeek);
+      allDailyTasks.push(...daily);
+    });
+    const totalDone = allDailyTasks.filter(t => t.status === 'done').length;
+    const totalTodo = allDailyTasks.length;
+    const totalPct = totalTodo ? Math.round((totalDone / totalTodo) * 100) : 0;
+    const totalMinsLeft = allDailyTasks.filter(t => t.status !== 'done').reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+
+    const goalSections = activeGoals.map(g => {
+      const goalTasks = s.tasks.filter(t => t.goalId === g.id);
+      const daily = Decompose.selectDailyTasks(goalTasks, g.hoursPerWeek);
+      const done = daily.filter(t => t.status === 'done');
+      const todo = daily.filter(t => t.status !== 'done');
+      const pct = Gamification.getGoalProgress(g.id, goalTasks);
+      const msColor = (s.milestones.find(m => m.goalId === g.id) || {}).color || 'var(--primary)';
+
+      return `
+        <div class="mg-goal-section" style="border-left:3px solid ${msColor};">
+          <div class="mg-goal-header" onclick="App.openGoal('${g.id}')">
+            <div class="mg-goal-title">${h(g.title)}</div>
+            <div class="mg-goal-meta">
+              <div class="mg-progress-bar"><div class="mg-progress-fill" style="width:${pct}%;background:${msColor}"></div></div>
+              <span class="mg-pct">${pct}%</span>
+              <span class="mg-task-count">${done.length}/${daily.length} today</span>
+            </div>
+          </div>
+          ${todo.length === 0 && done.length > 0
+            ? `<div class="mg-all-done">All done today! <span>+streak</span></div>`
+            : todo.length === 0
+              ? `<div class="mg-no-tasks">No tasks due today</div>`
+              : todo.slice(0, 2).map(t => renderTaskCard(t, s.user)).join('')
+          }
+          ${done.length ? `
+            <div class="mg-done-row">
+              ${done.map(t => `<span class="mg-done-chip">✓ ${h(t.title.length > 30 ? t.title.slice(0,30)+'…' : t.title)}</span>`).join('')}
+            </div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="page">
+        <div class="quest-header">
+          <div class="home-greeting">${greeting}</div>
+          <div class="quest-header-row">
+            <div>
+              <div class="quest-label">All Goals</div>
+              <div class="quest-title">${activeGoals.length} active quests</div>
+            </div>
+            <div class="quest-header-actions">
+              <button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another goal">＋</button>
+            </div>
+          </div>
+        </div>
+
+        ${renderStatsStrip(s.user)}
+
+        <div class="today-header">
+          <div class="today-header-left">
+            <span class="today-title">Today</span>
+            <span class="today-count">${totalDone}/${totalTodo} done</span>
+          </div>
+          ${totalMinsLeft > 0 ? `<span class="today-time-left">~${totalMinsLeft} min left</span>` : ''}
+        </div>
+        ${totalTodo > 0 ? `
+        <div class="today-progress-bar">
+          <div class="today-progress-fill" style="width:${totalPct}%"></div>
+        </div>` : ''}
+
+        <div class="mg-goals-list">
+          ${goalSections}
+        </div>
+
+        <div class="mg-manage-row">
+          <button class="btn btn-ghost btn-sm" onclick="App.nav('goals-manager')">
+            <i data-lucide="target" class="icon-sm"></i> Manage Goals
+          </button>
+        </div>
+
+      </div>
+      ${showReflection ? renderReflectionModal(showReflection) : ''}
+      ${renderBottomNav()}
+    `;
+  }
+
   // ── Home Page ─────────────────────────────────────────────────────────────
 
   function renderHome() {
@@ -231,11 +329,30 @@ const App = (() => {
       `;
     }
 
-    const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+    const activeGoals = s.goals.filter(g => (g.status || 'active') !== 'paused' && !g.completedAt);
+
+    // All goals paused
+    if (!activeGoals.length) {
+      return `
+        <div class="page">
+          <div class="empty-state">
+            <h2>All goals paused</h2>
+            <p>Resume a goal or add a new one to continue.</p>
+            <button class="btn btn-primary" onclick="App.nav('goals-manager')">Manage Goals</button>
+          </div>
+          ${renderBottomNav()}
+        </div>
+      `;
+    }
+
+    const goal = activeGoals.find(g => g.id === s.currentGoalId) || activeGoals[0];
     const allTasks = s.tasks.filter(t => t.goalId === goal.id);
 
     // Comeback check
     if (comebackMode) return renderComeback(goal, allTasks, Gamification.daysSinceActive(s.user));
+
+    // Multi-goal mode: grouped tasks from all active goals
+    if (activeGoals.length > 1) return renderMultiGoalHome(s, activeGoals);
 
     const hour = new Date().getHours();
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
@@ -272,21 +389,10 @@ const App = (() => {
               <button class="btn-edit-plan" onclick="App.openPlanEditor()" title="Edit plan with AI">
                 <i data-lucide="pencil" class="icon-sm"></i> Edit Plan
               </button>
-              ${s.goals.length < 3 ? `<button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another goal">＋</button>` : ''}
+              <button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another goal">＋</button>
             </div>
           </div>
         </div>
-
-        ${s.goals.length > 1 ? `
-        <div class="goal-switcher">
-          ${s.goals.map(g => `
-            <button class="goal-switch-btn ${g.id === goal.id ? 'active' : ''}"
-              onclick="App.switchGoal('${g.id}')">
-              <span class="gsb-dot ${g.id === goal.id ? 'active' : ''}"></span>
-              ${h(g.title.length > 28 ? g.title.slice(0,28) + '…' : g.title)}
-            </button>`).join('')}
-          ${s.goals.length < 3 ? `<button class="goal-switch-add" onclick="App.nav('new-goal')">+ New</button>` : ''}
-        </div>` : ''}
 
         <!-- Compact stats row -->
         ${renderStatsStrip(s.user)}
@@ -1163,7 +1269,7 @@ const App = (() => {
     const { goal, milestones, tasks, nodes } = draftPlan;
     State.set(s => ({
       ...s,
-      goals: [...s.goals, goal],
+      goals: [...s.goals, { ...goal, status: 'active' }],
       milestones: [...s.milestones, ...milestones],
       tasks: [...s.tasks, ...tasks],
       nodes: [...(s.nodes || []), ...nodes],
@@ -1736,6 +1842,148 @@ const App = (() => {
     render();
   }
 
+  // ── Goal Management ───────────────────────────────────────────────────────
+
+  function openGoal(goalId) {
+    State.set(st => ({ ...st, currentGoalId: goalId }));
+    expandedTaskId = null;
+    nav('home');
+  }
+
+  function pauseGoal(goalId) {
+    const s = State.get();
+    const goal = s.goals.find(g => g.id === goalId);
+    if (!goal) return;
+    const newStatus = (goal.status || 'active') === 'paused' ? 'active' : 'paused';
+    State.set(st => ({
+      ...st,
+      goals: st.goals.map(g => g.id === goalId ? { ...g, status: newStatus } : g),
+    }));
+    showNotif(newStatus === 'paused' ? 'Goal paused' : 'Goal resumed');
+    render();
+  }
+
+  function deleteGoal(goalId) {
+    if (!confirm('Delete this goal and all its tasks? This cannot be undone.')) return;
+    const s = State.get();
+    const remaining = s.goals.filter(g => g.id !== goalId);
+    State.set(st => ({
+      ...st,
+      goals: st.goals.filter(g => g.id !== goalId),
+      milestones: st.milestones.filter(m => m.goalId !== goalId),
+      tasks: st.tasks.filter(t => t.goalId !== goalId),
+      nodes: (st.nodes || []).filter(n => n.goalId !== goalId),
+      currentGoalId: st.currentGoalId === goalId ? (remaining[0]?.id || null) : st.currentGoalId,
+    }));
+    showNotif('Goal deleted');
+    render();
+  }
+
+  function openPlanEditorForGoal(goalId) {
+    State.set(st => ({ ...st, currentGoalId: goalId }));
+    openPlanEditor();
+  }
+
+  // ── Goals Manager Page ────────────────────────────────────────────────────
+
+  function renderGoalsManager() {
+    const s = State.get();
+
+    const STATUS_LABEL = { active: 'Active', paused: 'Paused', completed: 'Completed' };
+    const STATUS_CLASS = { active: 'gm-status-active', paused: 'gm-status-paused', completed: 'gm-status-done' };
+
+    const goalCards = s.goals.length === 0 ? `
+      <div class="gm-empty">
+        <div class="gm-empty-icon"><i data-lucide="target"></i></div>
+        <p>No goals yet. Create your first quest!</p>
+        <button class="btn btn-primary" onclick="App.nav('new-goal')">+ Create Goal</button>
+      </div>
+    ` : s.goals.map(g => {
+      const tasks = s.tasks.filter(t => t.goalId === g.id);
+      const doneTasks = tasks.filter(t => t.status === 'done');
+      const pct = Gamification.getGoalProgress(g.id, tasks);
+      const status = g.completedAt ? 'completed' : (g.status || 'active');
+      const msColor = (s.milestones.find(m => m.goalId === g.id) || {}).color || 'var(--primary)';
+      const isActive = s.currentGoalId === g.id;
+      return `
+        <div class="gm-goal-card ${isActive ? 'gm-card-current' : ''}">
+          <div class="gm-card-top">
+            <div class="gm-card-title-row">
+              <div class="gm-card-dot" style="background:${msColor}"></div>
+              <div class="gm-card-title">${h(g.title)}</div>
+            </div>
+            <span class="gm-status-badge ${STATUS_CLASS[status] || 'gm-status-active'}">${STATUS_LABEL[status] || 'Active'}</span>
+          </div>
+          <div class="gm-card-meta">
+            ${g.deadline ? `<span><i data-lucide="calendar" class="icon-xs"></i> ${g.deadline}</span>` : ''}
+            <span><i data-lucide="clock" class="icon-xs"></i> ${g.hoursPerWeek || 0}h/wk</span>
+            <span>${doneTasks.length}/${tasks.length} tasks</span>
+          </div>
+          <div class="gm-progress-track">
+            <div class="gm-progress-bar"><div class="gm-progress-fill" style="width:${pct}%;background:${msColor}"></div></div>
+            <span class="gm-pct-label">${pct}%</span>
+          </div>
+          <div class="gm-card-actions">
+            <button class="btn btn-primary btn-sm" onclick="App.openGoal('${g.id}')">
+              <i data-lucide="play" class="icon-sm"></i> Open
+            </button>
+            ${!g.completedAt ? `
+            <button class="btn btn-ghost btn-sm" onclick="App.pauseGoal('${g.id}')">
+              ${status === 'paused'
+                ? '<i data-lucide="play-circle" class="icon-sm"></i> Resume'
+                : '<i data-lucide="pause-circle" class="icon-sm"></i> Pause'}
+            </button>
+            <button class="btn btn-ghost btn-sm" onclick="App.openPlanEditorForGoal('${g.id}')">
+              <i data-lucide="pencil" class="icon-sm"></i> Edit Plan
+            </button>` : ''}
+            <button class="btn btn-ghost btn-sm gm-delete-btn" onclick="App.deleteGoal('${g.id}')">
+              <i data-lucide="trash-2" class="icon-sm"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Workload summary across active goals
+    const activeGoals = s.goals.filter(g => (g.status || 'active') === 'active' && !g.completedAt);
+    const totalHrs = activeGoals.reduce((sum, g) => sum + (g.hoursPerWeek || 0), 0);
+    const avail = s.userAvailability || { maxDailyMinutes: 240 };
+    const dailyAvailHrs = avail.maxDailyMinutes / 60;
+    const weeklyAvailHrs = dailyAvailHrs * 7;
+    const loadPct = weeklyAvailHrs > 0 ? Math.min(100, Math.round((totalHrs / weeklyAvailHrs) * 100)) : 0;
+    const loadClass = loadPct < 70 ? 'load-ok' : loadPct < 90 ? 'load-warn' : 'load-over';
+
+    return `
+      <div class="page goals-manager-page">
+        <div class="gm-header">
+          <h2><i data-lucide="target" class="icon-md"></i> Goals Manager</h2>
+          <button class="btn btn-primary btn-sm" onclick="App.nav('new-goal')">
+            <i data-lucide="plus" class="icon-sm"></i> New Goal
+          </button>
+        </div>
+
+        ${activeGoals.length > 0 ? `
+        <div class="gm-workload-card ${loadClass}">
+          <div class="gm-wl-title">
+            <i data-lucide="bar-chart-2" class="icon-sm"></i> Weekly Workload
+          </div>
+          <div class="gm-wl-row">
+            <div class="gm-wl-bar"><div class="gm-wl-fill" style="width:${loadPct}%"></div></div>
+            <span class="gm-wl-label">${totalHrs}h committed / ${Math.round(weeklyAvailHrs)}h available</span>
+          </div>
+          ${loadPct >= 90 ? `<div class="gm-wl-warn">Overloaded — consider pausing a goal or reducing hours/week</div>` : ''}
+        </div>` : ''}
+
+        <div class="gm-goals-list">
+          ${goalCards}
+        </div>
+
+        <div style="height:32px;"></div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  }
+
   function performPrestige() {
     const s = State.get();
     if (!Gamification.canPrestige(s.user)) return;
@@ -1808,11 +2056,11 @@ const App = (() => {
 
   function renderBottomNav() {
     const items = [
-      { id: 'home',     icon: 'home',           label: 'Today' },
-      { id: 'map',      icon: 'map',            label: 'Map' },
-      { id: 'calendar', icon: 'calendar',       label: 'Calendar' },
-      { id: 'review',   icon: 'calendar-check', label: 'Review' },
-      { id: 'profile',  icon: 'user',           label: 'Profile' },
+      { id: 'home',          icon: 'home',           label: 'Today' },
+      { id: 'goals-manager', icon: 'target',         label: 'Goals' },
+      { id: 'map',           icon: 'map',            label: 'Map' },
+      { id: 'calendar',      icon: 'calendar',       label: 'Calendar' },
+      { id: 'profile',       icon: 'user',           label: 'Profile' },
     ];
     return `
       <nav class="bottom-nav">
@@ -2247,8 +2495,15 @@ const App = (() => {
 
   function renderCalendar() {
     const s = State.get();
-    const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
-    if (!goal) return renderHome();
+    if (!s.goals.length) return renderHome();
+
+    const avail = s.userAvailability || { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
+
+    // Show tasks from ALL active goals
+    const activeGoalIds = new Set(
+      s.goals.filter(g => (g.status || 'active') !== 'paused' && !g.completedAt).map(g => g.id)
+    );
+    const activeTasks = s.tasks.filter(t => activeGoalIds.has(t.goalId) && t.status !== 'done');
 
     const todayDate = new Date();
     const baseDate = new Date(todayDate);
@@ -2258,15 +2513,13 @@ const App = (() => {
     const weekDates = CalendarHelper.getWeekDates(weekStart);
     const todayStr = todayDate.toISOString().split('T')[0];
 
-    const goalTasks = s.tasks.filter(t => t.goalId === goal.id);
-    const activeTasks = goalTasks.filter(t => t.status !== 'done');
     const schedules = s.taskSchedules || {};
     const scheduledIds = new Set(Object.keys(schedules));
 
-    // Sidebar: tasks with no schedule entry
+    // Unscheduled tasks from all active goals
     const unscheduledTasks = activeTasks.filter(t => !scheduledIds.has(t.id));
 
-    // Grid: only tasks that have been explicitly placed this week
+    // Grid: tasks explicitly placed this week
     const taskSlots = CalendarHelper.getTaskSlots(activeTasks, schedules, weekDates);
     const userEvents = (s.calendarEvents || []).filter(ev => weekDates.includes(ev.date));
     const conflicts = CalendarHelper.findConflicts(taskSlots, userEvents);
@@ -2289,6 +2542,20 @@ const App = (() => {
       return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     }
 
+    // ── Capacity per day ─────────────────────────────────────────────────────
+
+    function getDayCapacity(date) {
+      const dayEvents = userEvents.filter(ev => ev.date === date);
+      const eventMins = dayEvents.reduce((sum, ev) => sum + (ev.endHour - ev.startHour) * 60, 0);
+      const maxMins = Math.max(0, avail.maxDailyMinutes - eventMins);
+      const scheduledMins = taskSlots.filter(sl => sl.date === date).reduce((sum, sl) => {
+        const task = s.tasks.find(t => t.id === sl.taskId);
+        return sum + (task?.estimatedMinutes || 0);
+      }, 0);
+      const usedPct = maxMins > 0 ? Math.min(100, Math.round((scheduledMins / maxMins) * 100)) : 100;
+      return { scheduledMins, maxMins, usedPct };
+    }
+
     // ── Calendar grid ────────────────────────────────────────────────────────
 
     const dayColumns = weekDates.map((date, di) => {
@@ -2297,22 +2564,26 @@ const App = (() => {
       const dayEvents = userEvents.filter(ev => ev.date === date);
       const d = new Date(date + 'T00:00:00');
       const hasConflict = daySlots.some(sl => conflictTaskIds.has(sl.taskId));
+      const cap = getDayCapacity(date);
+      const capClass = cap.usedPct >= 100 ? 'cap-over' : cap.usedPct >= 80 ? 'cap-warn' : 'cap-ok';
 
       const taskBlocks = daySlots.map(sl => {
         const task = s.tasks.find(t => t.id === sl.taskId);
         if (!task) return '';
+        const taskGoal = s.goals.find(g => g.id === task.goalId);
+        const msColor = (s.milestones.find(m => m.goalId === task.goalId) || {}).color || 'var(--primary)';
         const top = (sl.startHour - START_H) * HOUR_PX;
         const heightPx = Math.max(28, (sl.endHour - sl.startHour) * HOUR_PX - 4);
         const isConflict = conflictTaskIds.has(sl.taskId);
         return `
           <div class="cal-event cal-ai-task ${isConflict ? 'cal-conflict' : ''}"
                draggable="true"
-               style="top:${top}px;height:${heightPx}px"
+               style="top:${top}px;height:${heightPx}px;border-left:3px solid ${msColor}"
                ondragstart="App.calDragStart(event,'${h(task.id)}',true)"
                ondragend="App.calDragEnd(event)"
                onclick="event.stopPropagation();App.calTaskClick('${h(task.id)}')">
             <div class="cal-event-title">${h(task.title)}</div>
-            <div class="cal-event-meta">${task.estimatedMinutes}m · ${task.difficulty}</div>
+            <div class="cal-event-meta">${task.estimatedMinutes}m · ${task.difficulty}${taskGoal ? ` · ${h(taskGoal.title.length > 14 ? taskGoal.title.slice(0,14)+'…' : taskGoal.title)}` : ''}</div>
             ${isConflict ? '<div class="cal-conflict-mark">⚠</div>' : ''}
             <button class="cal-event-del" title="Remove from calendar"
                     onclick="event.stopPropagation();App.calUnscheduleTask('${h(task.id)}')">×</button>
@@ -2336,6 +2607,10 @@ const App = (() => {
           <div class="cal-day-header ${isToday ? 'cal-today-header' : ''}">
             <span class="cal-day-name">${DAYS[di]}</span>
             <span class="cal-day-num ${isToday ? 'cal-today-num' : ''}">${d.getDate()}</span>
+            <div class="cal-cap-bar ${capClass}" title="${cap.scheduledMins}min / ${cap.maxMins}min capacity">
+              <div class="cal-cap-fill" style="width:${cap.usedPct}%"></div>
+            </div>
+            <span class="cal-cap-label ${capClass}">${cap.scheduledMins}m</span>
           </div>
           <div class="cal-day-body" style="height:${TOTAL_H * HOUR_PX}px;position:relative;"
                onclick="App.calClickSlot('${date}',event,${HOUR_PX},${START_H})"
@@ -2356,26 +2631,27 @@ const App = (() => {
           <div class="cal-time-slot" style="height:${HOUR_PX}px">${fmtHour(START_H + i)}</div>`).join('')}
       </div>`;
 
-    // ── Sidebar ──────────────────────────────────────────────────────────────
+    // ── Sidebar: tasks grouped by goal ───────────────────────────────────────
 
-    // Group unscheduled by milestone
-    const milestones = s.milestones.filter(m => m.goalId === goal.id);
-    const sidebarGroups = milestones.map(m => ({
-      ms: m,
-      tasks: unscheduledTasks.filter(t => t.milestoneId === m.id),
-    })).filter(g => g.tasks.length > 0);
+    const sidebarGoalGroups = [...activeGoalIds].map(gid => {
+      const g = s.goals.find(goal => goal.id === gid);
+      if (!g) return null;
+      const msColor = (s.milestones.find(m => m.goalId === gid) || {}).color || 'var(--primary)';
+      const tasks = unscheduledTasks.filter(t => t.goalId === gid);
+      return { goal: g, tasks, msColor };
+    }).filter(Boolean).filter(g => g.tasks.length > 0);
 
-    const sidebarContent = sidebarGroups.length === 0 ? `
+    const sidebarContent = sidebarGoalGroups.length === 0 ? `
       <div class="cst-empty">
         <div class="cst-empty-icon">✓</div>
         <div>All tasks scheduled!</div>
       </div>` :
-      sidebarGroups.map(g => `
+      sidebarGoalGroups.map(({ goal: g, tasks, msColor }) => `
         <div class="cst-group">
-          <div class="cst-group-label" style="border-color:${g.ms.color || 'var(--primary)'}">
-            ${h(g.ms.title)}
+          <div class="cst-group-label" style="border-color:${msColor}">
+            ${h(g.title.length > 24 ? g.title.slice(0,24)+'…' : g.title)}
           </div>
-          ${g.tasks.map(task => `
+          ${tasks.map(task => `
             <div class="cst-task"
                  draggable="true"
                  ondragstart="App.calDragStart(event,'${h(task.id)}',false)"
@@ -2387,11 +2663,17 @@ const App = (() => {
                   <span class="cst-dur">${task.estimatedMinutes}m</span>
                   <span class="cst-diff cst-diff-${task.difficulty}">${task.difficulty}</span>
                 </div>
-                ${task.deadline ? `<div class="cst-suggest">Suggested: ${fmtDateShortCal(task.deadline)}</div>` : ''}
+                ${task.deadline ? `<div class="cst-suggest">Due: ${fmtDateShortCal(task.deadline)}</div>` : ''}
               </div>
             </div>
           `).join('')}
         </div>`).join('');
+
+    // Weekly capacity summary
+    const weeklyScheduledMins = weekDates.reduce((sum, date) => sum + getDayCapacity(date).scheduledMins, 0);
+    const weeklyMaxMins = avail.maxDailyMinutes * 7;
+    const weeklyPct = Math.min(100, Math.round((weeklyScheduledMins / weeklyMaxMins) * 100));
+    const weeklyCapClass = weeklyPct >= 100 ? 'cap-over' : weeklyPct >= 80 ? 'cap-warn' : 'cap-ok';
 
     return `
       <div class="page calendar-page">
@@ -2406,10 +2688,18 @@ const App = (() => {
                       onclick="App.calNavToday()">Today</button>
             </div>
           </div>
-          <div class="cal-legend">
-            <span class="cal-legend-item cal-legend-ai"><span class="cal-legend-dot"></span>AI Task</span>
-            <span class="cal-legend-item cal-legend-user"><span class="cal-legend-dot"></span>Your Event</span>
-            <span class="cal-legend-item cal-legend-hint">Drag tasks from the panel →</span>
+          <div class="cal-header-row2">
+            <div class="cal-legend">
+              <span class="cal-legend-item cal-legend-ai"><span class="cal-legend-dot"></span>Task</span>
+              <span class="cal-legend-item cal-legend-user"><span class="cal-legend-dot"></span>Event</span>
+            </div>
+            <div class="cal-week-capacity ${weeklyCapClass}">
+              <i data-lucide="battery-charging" class="icon-xs"></i>
+              ${Math.round(weeklyScheduledMins/60)}h / ${Math.round(weeklyMaxMins/60)}h this week
+            </div>
+            <button class="btn-cap-settings" onclick="App.calOpenAvailability()" title="Set daily availability">
+              <i data-lucide="settings-2" class="icon-sm"></i>
+            </button>
           </div>
           ${conflicts.length ? `
           <div class="cal-conflict-notice">
@@ -2434,8 +2724,11 @@ const App = (() => {
                ondragover="event.preventDefault()"
                ondrop="App.calDropOnSidebar(event)">
             <div class="cal-sidebar-header">
-              <span>Unscheduled Tasks</span>
-              <span class="cst-count">${unscheduledTasks.length}</span>
+              <span>Unscheduled <span class="cst-count">${unscheduledTasks.length}</span></span>
+              ${unscheduledTasks.length > 0 ? `
+              <button class="btn-auto-sched" onclick="App.calAutoSchedule()" title="Auto-distribute tasks across the week">
+                <i data-lucide="wand-2" class="icon-xs"></i> Auto
+              </button>` : ''}
             </div>
             <div class="cal-sidebar-list">
               ${sidebarContent}
@@ -2444,6 +2737,7 @@ const App = (() => {
         </div>
 
         ${calAddModal ? renderCalAddModal() : ''}
+        ${calAvailModal ? renderAvailabilityModal() : ''}
         ${renderBottomNav()}
       </div>
     `;
@@ -2524,12 +2818,13 @@ const App = (() => {
       isPinned: false,
     };
 
-    // Conflict check
+    // Conflict check across all active goals
     const s = State.get();
     const baseDate = new Date();
     baseDate.setDate(new Date().getDate() + calWeekOffset * 7);
     const weekDates = CalendarHelper.getWeekDates(CalendarHelper.getWeekStart(baseDate));
-    const goalTasks = s.tasks.filter(t => t.goalId === s.currentGoalId && t.status !== 'done');
+    const activeGoalIds = new Set(s.goals.filter(g => (g.status||'active') !== 'paused' && !g.completedAt).map(g => g.id));
+    const goalTasks = s.tasks.filter(t => activeGoalIds.has(t.goalId) && t.status !== 'done');
     const slots = CalendarHelper.getTaskSlots(goalTasks, s.taskSchedules || {}, weekDates);
     const clashes = CalendarHelper.findConflicts(slots, [ev]);
     if (clashes.length) {
@@ -2608,23 +2903,56 @@ const App = (() => {
     const s = State.get();
     const task = s.tasks.find(t => t.id === taskId);
     const durationH = task ? Math.max(0.5, (task.estimatedMinutes || 60) / 60) : 1;
+    const avail = s.userAvailability || { maxDailyMinutes: 240 };
 
-    State.set(st => ({
-      ...st,
-      taskSchedules: {
-        ...st.taskSchedules,
-        [taskId]: {
-          date,
-          startHour: hour,
-          endHour: Math.min(22, hour + durationH),
-          isUserModified: true,
+    // Capacity check
+    const dayEvents = (s.calendarEvents || []).filter(ev => ev.date === date);
+    const eventMins = dayEvents.reduce((sum, ev) => sum + (ev.endHour - ev.startHour) * 60, 0);
+    const maxMins = Math.max(0, avail.maxDailyMinutes - eventMins);
+    const baseDate2 = new Date();
+    baseDate2.setDate(new Date().getDate() + calWeekOffset * 7);
+    const weekDates2 = CalendarHelper.getWeekDates(CalendarHelper.getWeekStart(baseDate2));
+    const activeGoalIds2 = new Set(s.goals.filter(g => (g.status||'active') !== 'paused' && !g.completedAt).map(g => g.id));
+    const activeTasks2 = s.tasks.filter(t => activeGoalIds2.has(t.goalId) && t.status !== 'done');
+    const currentSlots = CalendarHelper.getTaskSlots(activeTasks2, s.taskSchedules || {}, weekDates2);
+    const scheduledMins = currentSlots.filter(sl => sl.date === date && sl.taskId !== taskId)
+      .reduce((sum, sl) => { const t = s.tasks.find(t => t.id === sl.taskId); return sum + (t?.estimatedMinutes || 0); }, 0);
+    const taskMins = task?.estimatedMinutes || 0;
+
+    const scheduleTask = () => {
+      State.set(st => ({
+        ...st,
+        taskSchedules: {
+          ...st.taskSchedules,
+          [taskId]: {
+            date,
+            startHour: hour,
+            endHour: Math.min(22, hour + durationH),
+            isUserModified: true,
+          },
         },
-      },
-    }));
+      }));
+      document.body.classList.remove('cal-dragging');
+      calDragData = null;
+      render();
+    };
 
-    document.body.classList.remove('cal-dragging');
-    calDragData = null;
-    render();
+    if (scheduledMins + taskMins > maxMins) {
+      // Overload warning
+      const over = scheduledMins + taskMins - maxMins;
+      const dayName = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long' });
+      const choice = confirm(
+        `${dayName} is over capacity by ${over} min (${scheduledMins + taskMins}/${maxMins} min).\n\nSchedule here anyway?`
+      );
+      if (choice) scheduleTask();
+      else {
+        document.body.classList.remove('cal-dragging');
+        calDragData = null;
+      }
+      return;
+    }
+
+    scheduleTask();
   }
 
   function calDropOnSidebar(event) {
@@ -2633,6 +2961,161 @@ const App = (() => {
     calUnscheduleTask(calDragData.taskId);
     document.body.classList.remove('cal-dragging');
     calDragData = null;
+  }
+
+  // ── Auto-Schedule ─────────────────────────────────────────────────────────
+
+  function calAutoSchedule() {
+    const s = State.get();
+    const avail = s.userAvailability || { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
+    const activeGoalIds = new Set(s.goals.filter(g => (g.status||'active') !== 'paused' && !g.completedAt).map(g => g.id));
+    const activeTasks = s.tasks.filter(t => activeGoalIds.has(t.goalId) && t.status !== 'done');
+    const scheduledIds = new Set(Object.keys(s.taskSchedules || {}));
+    const unscheduled = activeTasks.filter(t => !scheduledIds.has(t.id));
+
+    if (!unscheduled.length) { showNotif('All tasks are already scheduled!'); return; }
+
+    const baseDate = new Date();
+    baseDate.setDate(baseDate.getDate() + calWeekOffset * 7);
+    const weekDates = CalendarHelper.getWeekDates(CalendarHelper.getWeekStart(baseDate));
+    const todayStr = new Date().toISOString().split('T')[0];
+    const futureWeekDates = weekDates.filter(d => d >= todayStr);
+
+    // Sort by deadline urgency, then goal priority
+    const sorted = [...unscheduled].sort((a, b) => {
+      const aDate = a.deadline || '9999-12-31';
+      const bDate = b.deadline || '9999-12-31';
+      if (aDate !== bDate) return aDate.localeCompare(bDate);
+      const aGoal = s.goals.find(g => g.id === a.goalId);
+      const bGoal = s.goals.find(g => g.id === b.goalId);
+      return (bGoal?.priority || 5) - (aGoal?.priority || 5);
+    });
+
+    // Build day usage tracker from existing scheduled tasks
+    const dayUsage = {};
+    weekDates.forEach(d => { dayUsage[d] = 0; });
+    Object.entries(s.taskSchedules || {}).forEach(([taskId, sched]) => {
+      if (sched && weekDates.includes(sched.date)) {
+        const t = s.tasks.find(t => t.id === taskId);
+        if (t) dayUsage[sched.date] = (dayUsage[sched.date] || 0) + (t.estimatedMinutes || 0);
+      }
+    });
+
+    // Build end-hour tracker per day for stacking
+    const dayEndHour = {};
+    weekDates.forEach(d => { dayEndHour[d] = avail.workStart; });
+    Object.entries(s.taskSchedules || {}).forEach(([, sched]) => {
+      if (sched && weekDates.includes(sched.date)) {
+        dayEndHour[sched.date] = Math.max(dayEndHour[sched.date] || 0, sched.endHour || 0);
+      }
+    });
+
+    const newSchedules = { ...s.taskSchedules };
+    const unassigned = [];
+
+    for (const task of sorted) {
+      let assigned = false;
+      for (const date of futureWeekDates) {
+        const dayEvents = (s.calendarEvents || []).filter(ev => ev.date === date);
+        const eventMins = dayEvents.reduce((sum, ev) => sum + (ev.endHour - ev.startHour) * 60, 0);
+        const maxAvail = Math.max(0, avail.maxDailyMinutes - eventMins);
+
+        if ((dayUsage[date] || 0) + task.estimatedMinutes <= maxAvail) {
+          const startHour = Math.max(avail.workStart, dayEndHour[date] || avail.workStart);
+          const durationH = Math.max(0.5, task.estimatedMinutes / 60);
+          const endHour = Math.min(avail.workEnd, startHour + durationH);
+
+          newSchedules[task.id] = {
+            date,
+            startHour: Math.round(startHour * 2) / 2,
+            endHour: Math.round(endHour * 2) / 2,
+            isUserModified: false,
+          };
+          dayUsage[date] = (dayUsage[date] || 0) + task.estimatedMinutes;
+          dayEndHour[date] = endHour;
+          assigned = true;
+          break;
+        }
+      }
+      if (!assigned) unassigned.push(task);
+    }
+
+    State.set(st => ({ ...st, taskSchedules: newSchedules }));
+    const placed = sorted.length - unassigned.length;
+    const msg = unassigned.length
+      ? `Scheduled ${placed} tasks. ${unassigned.length} couldn't fit this week — try the next week.`
+      : `Auto-scheduled ${placed} tasks across the week!`;
+    showNotif(msg);
+    render();
+  }
+
+  // ── Availability Settings Modal ───────────────────────────────────────────
+
+  function calOpenAvailability() { calAvailModal = true; render(); }
+  function calCloseAvailability() { calAvailModal = false; render(); }
+
+  function calSaveAvailability() {
+    const startEl = document.getElementById('avail-start');
+    const endEl   = document.getElementById('avail-end');
+    const maxEl   = document.getElementById('avail-max');
+    if (!startEl || !endEl || !maxEl) return;
+    const workStart = parseInt(startEl.value);
+    const workEnd   = parseInt(endEl.value);
+    const maxDaily  = parseInt(maxEl.value);
+    if (workEnd <= workStart) { showNotif('End must be after start', 'error'); return; }
+    if (maxDaily < 30 || maxDaily > 960) { showNotif('Max daily must be 30–960 min', 'error'); return; }
+    State.set(st => ({ ...st, userAvailability: { workStart, workEnd, maxDailyMinutes: maxDaily } }));
+    calAvailModal = false;
+    showNotif('Availability saved');
+    render();
+  }
+
+  function renderAvailabilityModal() {
+    const s = State.get();
+    const avail = s.userAvailability || { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
+
+    function hrOpts(selected, from, to) {
+      return Array.from({ length: to - from }, (_, i) => {
+        const hr = from + i;
+        const lbl = hr === 12 ? '12:00 PM' : hr > 12 ? `${hr-12}:00 PM` : `${hr}:00 AM`;
+        return `<option value="${hr}" ${hr === selected ? 'selected' : ''}>${lbl}</option>`;
+      }).join('');
+    }
+
+    return `
+      <div class="cal-modal-overlay" onclick="App.calCloseAvailability()">
+        <div class="cal-modal avail-modal" onclick="event.stopPropagation()">
+          <div class="cal-modal-title"><i data-lucide="settings-2" class="icon-sm"></i> Daily Availability</div>
+          <p class="avail-hint">Set when you're available and your daily task limit.</p>
+          <div class="avail-fields">
+            <div class="avail-field">
+              <label>Work starts</label>
+              <select id="avail-start" class="cal-modal-select">${hrOpts(avail.workStart, 5, 14)}</select>
+            </div>
+            <div class="avail-field">
+              <label>Work ends</label>
+              <select id="avail-end" class="cal-modal-select">${hrOpts(avail.workEnd, 14, 25)}</select>
+            </div>
+            <div class="avail-field avail-field-full">
+              <label>Max daily task time <span class="avail-unit">(minutes)</span></label>
+              <input id="avail-max" type="number" class="cal-modal-input avail-max-input"
+                min="30" max="960" step="30" value="${avail.maxDailyMinutes}">
+              <div class="avail-presets">
+                ${[60,120,180,240,360].map(v => `
+                  <button class="avail-preset ${v === avail.maxDailyMinutes ? 'active' : ''}"
+                    onclick="document.getElementById('avail-max').value=${v}">
+                    ${Math.round(v/60)}h
+                  </button>`).join('')}
+              </div>
+            </div>
+          </div>
+          <div class="cal-modal-actions">
+            <button class="btn btn-ghost" onclick="App.calCloseAvailability()">Cancel</button>
+            <button class="btn btn-primary" onclick="App.calSaveAvailability()">Save</button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   // ── Notification ──────────────────────────────────────────────────────────
@@ -2658,11 +3141,12 @@ const App = (() => {
       app.innerHTML = renderPlanPreview() + renderNotif();
     } else {
       let pageHtml = '';
-      if      (currentPage === 'home')     pageHtml = renderHome();
-      else if (currentPage === 'map')      pageHtml = renderMap();
-      else if (currentPage === 'calendar') pageHtml = renderCalendar();
-      else if (currentPage === 'profile')  pageHtml = renderProfile();
-      else if (currentPage === 'review')   pageHtml = renderReview();
+      if      (currentPage === 'home')          pageHtml = renderHome();
+      else if (currentPage === 'goals-manager') pageHtml = renderGoalsManager();
+      else if (currentPage === 'map')           pageHtml = renderMap();
+      else if (currentPage === 'calendar')      pageHtml = renderCalendar();
+      else if (currentPage === 'profile')       pageHtml = renderProfile();
+      else if (currentPage === 'review')        pageHtml = renderReview();
       else pageHtml = renderHome();
 
       app.innerHTML = `
@@ -2765,6 +3249,8 @@ const App = (() => {
     reviewDefer, reviewSwapDifficulty, saveWeeklyReflection,
     performPrestige, switchGoal,
     showCertificate, dismissCertificate, downloadCertificate,
+    // Multi-goal management
+    openGoal, pauseGoal, deleteGoal, openPlanEditorForGoal,
     // Plan Chat
     sendPlanChat, applyPlanChanges, discardPlanChanges,
     // Plan Editor (active plan)
@@ -2774,5 +3260,6 @@ const App = (() => {
     calAddEvent, calEventClick, calDeleteEvent, calTaskClick, calResolveConflicts,
     calUnscheduleTask,
     calDragStart, calDragEnd, calDropOnDay, calDropOnSidebar,
+    calAutoSchedule, calOpenAvailability, calCloseAvailability, calSaveAvailability,
   };
 })();

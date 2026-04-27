@@ -30,6 +30,11 @@ const State = (() => {
     taskSchedules: {},    // { [taskId]: { date, startHour, endHour, isUserModified } }
     planChat: [],         // { role:'user'|'assistant'|'system', content, ts }
     planVersions: [],     // { id, goalId, versionNumber, status, createdAt, changeSummary }
+    userAvailability: {   // daily capacity settings
+      workStart: 9,
+      workEnd: 22,
+      maxDailyMinutes: 240,
+    },
   };
 
   function load() {
@@ -47,6 +52,9 @@ const State = (() => {
       if (!saved.taskSchedules) saved.taskSchedules = {};
       if (!saved.planChat) saved.planChat = [];
       if (!saved.planVersions) saved.planVersions = [];
+      if (!saved.userAvailability) saved.userAvailability = { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
+      // Migrate goals: ensure every goal has a status field
+      if (saved.goals) saved.goals = saved.goals.map(g => g.status ? g : { ...g, status: 'active' });
       return saved;
     } catch { return { ...defaults }; }
   }
