@@ -140,6 +140,257 @@ const App = (() => {
     `;
   }
 
+  // ── Left Panel (workspace) ────────────────────────────────────────────────
+
+  function renderLeftPanel(s) {
+    const li = Gamification.getLevelInfo(s.user.xp);
+    const goals = s.goals || [];
+    const items = [
+      { id: 'home',          icon: 'home',           label: 'Today'    },
+      { id: 'goals-manager', icon: 'target',         label: 'Goals'    },
+      { id: 'map',           icon: 'map',            label: 'Map'      },
+      { id: 'calendar',      icon: 'calendar',       label: 'Calendar' },
+      { id: 'review',        icon: 'bar-chart-2',    label: 'Review'   },
+      { id: 'profile',       icon: 'user',           label: 'Profile'  },
+    ];
+    const goalItems = goals.map(g => {
+      const pct = Gamification.getGoalProgress(g.id, s.tasks);
+      const isPaused = (g.status || 'active') === 'paused';
+      const isActive = g.id === s.currentGoalId;
+      const msColor = (s.milestones.find(m => m.goalId === g.id) || {}).color || 'var(--primary)';
+      return `
+        <button class="lp-goal-item ${isActive ? 'lp-goal-active' : ''} ${isPaused ? 'lp-goal-paused' : ''}"
+                onclick="App.openGoal('${g.id}')">
+          <span class="lp-goal-dot" style="background:${msColor}"></span>
+          <span class="lp-goal-name">${h(g.title)}</span>
+          <span class="lp-goal-pct">${pct}%</span>
+        </button>`;
+    }).join('');
+    return `
+      <div class="workspace-left">
+        <div class="lp-logo"><span class="lp-logo-dot"></span>Goal<span>Quest</span></div>
+        <nav class="lp-nav">
+          ${items.map(it => `
+            <button class="lp-nav-item ${currentPage === it.id ? 'active' : ''}"
+                    onclick="App.nav('${it.id}')">
+              <span class="lp-nav-icon"><i data-lucide="${it.icon}"></i></span>
+              ${it.label}
+            </button>`).join('')}
+        </nav>
+        ${goals.length ? `
+        <div class="lp-divider"></div>
+        <div class="lp-section-label">Goals</div>
+        <div class="lp-goals">${goalItems}</div>
+        <button class="lp-add-goal" onclick="App.nav('new-goal')">
+          <i data-lucide="plus" class="icon-sm"></i> Add Goal
+        </button>` : `
+        <div class="lp-goals">
+          <button class="lp-add-goal" style="margin-top:12px" onclick="App.nav('new-goal')">
+            <i data-lucide="plus" class="icon-sm"></i> Add Goal
+          </button>
+        </div>`}
+        <div class="lp-user">
+          <div class="lp-user-level">Lv.${s.user.level} · ${h(li.current.title)}</div>
+          <div class="lp-user-xp-bar">
+            <div class="lp-user-xp-fill" style="width:${li.progress}%"></div>
+          </div>
+          <div class="lp-user-streak">
+            <i data-lucide="flame" class="icon-xs" style="color:var(--accent)"></i>
+            ${s.user.streak}-day streak
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Right Panel (context, per page) ───────────────────────────────────────
+
+  function renderRightPanel(page, s) {
+    if (page === 'calendar')      return _rpCalendar(s);
+    if (page === 'home')          return _rpHome(s);
+    if (page === 'goals-manager') return _rpGoalsManager(s);
+    return _rpDefault(s);
+  }
+
+  function _rpHome(s) {
+    const li = Gamification.getLevelInfo(s.user.xp);
+    const mult = Gamification.getMomentumMultiplier(s.user.streak);
+    const multLabel = Gamification.getMomentumLabel(mult);
+    const goal = s.goals.find(g => g.id === s.currentGoalId) || s.goals[0];
+    const goalPct = goal ? Gamification.getGoalProgress(goal.id, s.tasks) : 0;
+    const allTasks = goal ? s.tasks.filter(t => t.goalId === goal.id) : [];
+    const daily = goal ? Decompose.selectDailyTasks(allTasks, goal.hoursPerWeek) : [];
+    const doneCt = daily.filter(t => t.status === 'done').length;
+    return `
+      <div class="workspace-right">
+        <div class="rp-header"><span class="rp-header-title">Summary</span></div>
+        <div class="rp-body">
+          <div class="rp-stat-grid">
+            <div class="rp-stat-card">
+              <div class="rp-stat-val">${s.user.streak}</div>
+              <div class="rp-stat-label">Streak</div>
+            </div>
+            <div class="rp-stat-card">
+              <div class="rp-stat-val">Lv.${s.user.level}</div>
+              <div class="rp-stat-label">${h(li.current.title)}</div>
+            </div>
+            <div class="rp-stat-card">
+              <div class="rp-stat-val">${doneCt}/${daily.length}</div>
+              <div class="rp-stat-label">Today</div>
+            </div>
+            <div class="rp-stat-card">
+              <div class="rp-stat-val">${s.user.xp}</div>
+              <div class="rp-stat-label">Total XP</div>
+            </div>
+          </div>
+          ${goal ? `
+          <div class="rp-section">
+            <div class="rp-section-label">Goal Progress</div>
+            <div class="rp-progress-row">
+              <span class="rp-progress-label">${h(goal.title.length > 22 ? goal.title.slice(0,22)+'…' : goal.title)}</span>
+              <span class="rp-progress-pct">${goalPct}%</span>
+            </div>
+            <div class="rp-progress-bar"><div class="rp-progress-fill" style="width:${goalPct}%"></div></div>
+          </div>` : ''}
+          <div class="rp-section">
+            <div class="rp-section-label">Quick Actions</div>
+            ${goal ? `<button class="rp-btn" onclick="App.openPlanEditor()"><i data-lucide="pencil"></i> Edit Plan</button>` : ''}
+            <button class="rp-btn" onclick="App.nav('calendar')"><i data-lucide="calendar"></i> Open Calendar</button>
+            <button class="rp-btn" onclick="App.nav('map')"><i data-lucide="map"></i> Progress Map</button>
+          </div>
+          <div class="rp-section">
+            <div class="rp-section-label">Momentum</div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:0.82rem;padding:8px 10px;background:var(--accent-l);border-radius:var(--radius-sm);border:1px solid var(--accent-border)">
+              <i data-lucide="zap" class="icon-sm" style="color:var(--accent)"></i>
+              <span style="font-weight:600;color:var(--accent)">${h(multLabel)}</span>
+              <span style="color:var(--muted);font-size:0.7rem">×${mult} XP</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function _rpCalendar(s) {
+    const activeGoalIds = new Set(
+      s.goals.filter(g => (g.status || 'active') !== 'paused' && !g.completedAt).map(g => g.id)
+    );
+    const scheduledIds = new Set(Object.keys(s.taskSchedules || {}));
+    const unscheduled = s.tasks.filter(t =>
+      activeGoalIds.has(t.goalId) && t.status !== 'done' && !scheduledIds.has(t.id)
+    );
+    const byGoal = [...activeGoalIds].map(gid => {
+      const g = s.goals.find(g => g.id === gid);
+      if (!g) return null;
+      const msColor = (s.milestones.find(m => m.goalId === gid) || {}).color || 'var(--primary)';
+      const tasks = unscheduled.filter(t => t.goalId === gid);
+      return { goal: g, tasks, msColor };
+    }).filter(Boolean).filter(x => x.tasks.length > 0);
+
+    const avail = s.userAvailability || { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
+    const wkStart = CalendarHelper.getWeekStart(new Date(new Date().getTime() + calWeekOffset * 7 * 864e5));
+    const wkDates = CalendarHelper.getWeekDates(wkStart);
+    const userEvents = (s.calendarEvents || []).filter(ev => ev.type === 'USER_EVENT');
+    const DAYS_S = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    const dayBars = wkDates.map((date, i) => {
+      const evMins = userEvents.filter(ev => ev.date === date).reduce((sum, ev) => sum + (ev.endHour - ev.startHour) * 60, 0);
+      const maxMins = Math.max(0, avail.maxDailyMinutes - evMins);
+      const schedMins = Object.entries(s.taskSchedules || {})
+        .filter(([, sc]) => sc && sc.date === date)
+        .reduce((sum, [tid]) => sum + (s.tasks.find(t => t.id === tid)?.estimatedMinutes || 0), 0);
+      const pct = maxMins > 0 ? Math.min(100, Math.round((schedMins / maxMins) * 100)) : (schedMins > 0 ? 100 : 0);
+      const cls = pct >= 100 ? 'cap-over' : pct >= 80 ? 'cap-warn' : 'cap-ok';
+      return `<div class="rp-cap-day">
+        <span class="rp-cap-day-label">${DAYS_S[i]}</span>
+        <div class="rp-cap-bar"><div class="rp-cap-fill ${cls}" style="width:${pct}%"></div></div>
+        <span class="rp-cap-mins">${schedMins}m</span>
+      </div>`;
+    }).join('');
+
+    const tasksHtml = byGoal.length === 0
+      ? `<div class="rp-empty"><div class="rp-empty-icon">✓</div>All tasks scheduled!</div>`
+      : byGoal.map(({ goal: g, tasks, msColor }) => `
+        <div class="rp-goal-group">
+          <div class="rp-goal-group-label" style="color:${msColor}">${h(g.title.length > 20 ? g.title.slice(0,20)+'…' : g.title)}</div>
+          ${tasks.map(t => `
+            <div class="rp-task-item" draggable="true"
+                 ondragstart="App.calDragStart(event,'${h(t.id)}',false)"
+                 ondragend="App.calDragEnd(event)">
+              <span class="rp-task-dot" style="background:${msColor}"></span>
+              <div class="rp-task-info">
+                <div class="rp-task-name">${h(t.title)}</div>
+                <div class="rp-task-meta">${t.estimatedMinutes}m · ${t.difficulty}</div>
+              </div>
+              <span class="rp-task-drag">⋮⋮</span>
+            </div>`).join('')}
+        </div>`).join('');
+
+    return `
+      <div class="workspace-right">
+        <div class="rp-header">
+          <span class="rp-header-title">Unscheduled <span style="color:var(--text)">${unscheduled.length}</span></span>
+          ${unscheduled.length > 0 ? `
+            <button class="ctrl-btn ctrl-btn-primary" style="padding:4px 10px;font-size:0.72rem;min-height:28px"
+                    onclick="App.calAutoSchedule()">
+              <i data-lucide="wand-2"></i> Auto
+            </button>` : ''}
+        </div>
+        <div class="rp-body" ondragover="event.preventDefault()" ondrop="App.calDropOnSidebar(event)">
+          <div class="rp-section">${tasksHtml}</div>
+          <div class="rp-section">
+            <div class="rp-section-label">Daily Capacity</div>
+            ${dayBars}
+            <button class="rp-btn" style="margin-top:8px" onclick="App.calOpenAvailability()">
+              <i data-lucide="settings-2"></i> Availability Settings
+            </button>
+          </div>
+          <div class="rp-section">
+            <button class="rp-btn rp-btn-primary" onclick="App.calAutoSchedule()">
+              <i data-lucide="wand-2"></i> Auto-Schedule Week
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function _rpGoalsManager(s) {
+    const remaining = s.tasks.filter(t => t.status !== 'done').length;
+    const done = s.tasks.filter(t => t.status === 'done').length;
+    const active = s.goals.filter(g => (g.status || 'active') === 'active').length;
+    return `
+      <div class="workspace-right">
+        <div class="rp-header"><span class="rp-header-title">Overview</span></div>
+        <div class="rp-body">
+          <div class="rp-stat-grid">
+            <div class="rp-stat-card"><div class="rp-stat-val">${s.goals.length}</div><div class="rp-stat-label">Goals</div></div>
+            <div class="rp-stat-card"><div class="rp-stat-val">${active}</div><div class="rp-stat-label">Active</div></div>
+            <div class="rp-stat-card"><div class="rp-stat-val">${remaining}</div><div class="rp-stat-label">Remaining</div></div>
+            <div class="rp-stat-card"><div class="rp-stat-val">${done}</div><div class="rp-stat-label">Completed</div></div>
+          </div>
+          <div class="rp-section">
+            <button class="rp-btn rp-btn-primary" onclick="App.nav('new-goal')">
+              <i data-lucide="plus"></i> Add New Goal
+            </button>
+            <button class="rp-btn" onclick="App.nav('home')">
+              <i data-lucide="home"></i> Back to Today
+            </button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function _rpDefault(s) {
+    return `
+      <div class="workspace-right">
+        <div class="rp-header"><span class="rp-header-title">Details</span></div>
+        <div class="rp-body">
+          <div class="rp-empty" style="margin-top:40px">
+            <div class="rp-empty-icon">✨</div>
+            <div style="font-size:0.8rem;color:var(--muted)">Context details appear here</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
   // ── Stats Strip ───────────────────────────────────────────────────────────
 
   function renderStatsStrip(user) {
@@ -253,6 +504,13 @@ const App = (() => {
     }).join('');
 
     return `
+      <div class="control-bar">
+        <span class="ctrl-title">Today</span>
+        <span class="ctrl-sub">${greeting} · ${activeGoals.length} goals</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.nav('goals-manager')"><i data-lucide="target"></i> Manage Goals</button>
+        <button class="ctrl-btn ctrl-btn-primary" onclick="App.nav('new-goal')"><i data-lucide="plus"></i> Add Goal</button>
+      </div>
       <div class="page">
         <div class="quest-header">
           <div class="home-greeting">${greeting}</div>
@@ -375,6 +633,14 @@ const App = (() => {
     ].filter(Boolean).join('');
 
     return `
+      <div class="control-bar">
+        <span class="ctrl-title">Today</span>
+        <span class="ctrl-sub">${greeting}</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.openPlanEditor()"><i data-lucide="pencil"></i> Edit Plan</button>
+        <button class="ctrl-btn" onclick="App.nav('calendar')"><i data-lucide="calendar"></i> Calendar</button>
+        <button class="ctrl-btn ctrl-btn-primary" onclick="App.nav('new-goal')"><i data-lucide="plus"></i> Add Goal</button>
+      </div>
       <div class="page">
 
         <!-- Header: greeting + quest title + actions -->
@@ -564,12 +830,18 @@ const App = (() => {
           onclick="App.expandTask('${task.id}')" style="cursor:pointer;">
           <div class="tc-collapsed">
             <div class="tc-top-row">
-              <span class="tc-diff-badge diff-${task.difficulty}">${task.difficulty}</span>
+              <span class="tc-diff-badge diff-${task.difficulty} tc-diff-clickable"
+                    onclick="event.stopPropagation();App.cycleTaskDifficulty('${task.id}')"
+                    title="Click to change difficulty">${task.difficulty}</span>
               <span class="tc-title-collapsed">${h(task.title)}</span>
               ${task.isBoss ? '<span class="meta-pill boss-xp"><i data-lucide="swords" class="icon-xs"></i> Boss</span>' : ''}
             </div>
             <div class="tc-bottom-row">
-              <span class="meta-pill time"><i data-lucide="clock" class="icon-xs"></i> ${task.estimatedMinutes}min</span>
+              <select class="tc-dur-select" title="Change duration"
+                      onclick="event.stopPropagation()"
+                      onchange="event.stopPropagation();App.setTaskDuration('${task.id}', this.value)">
+                ${[15,25,30,45,60,90,120].map(m => `<option value="${m}" ${m===task.estimatedMinutes?'selected':''}>${m}min</option>`).join('')}
+              </select>
               <span class="meta-pill ${task.isBoss ? 'boss-xp' : 'xp'}">+${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</span>
               ${deadlineLabel}
               <span class="btn-start"><i data-lucide="play" class="icon-xs"></i> Start Task</span>
@@ -648,6 +920,14 @@ const App = (() => {
         </div>
         ` : ''}
 
+        <!-- Notes (inline editable) -->
+        <div class="tc-notes-block">
+          <textarea class="tc-notes-input" placeholder="Add notes…"
+            onclick="event.stopPropagation()"
+            onblur="App.saveTaskNotes('${task.id}', this.value)"
+            rows="2">${h(task.notes || '')}</textarea>
+        </div>
+
         <!-- Actions -->
         <div class="tc-actions">
           <button class="btn btn-ghost" onclick="App.startFocus('${task.id}')"><i data-lucide="timer" class="icon-sm"></i> Focus</button>
@@ -658,6 +938,25 @@ const App = (() => {
           </button>
         </div>
       </div>`;
+  }
+
+  // ── Inline Task Editing ───────────────────────────────────────────────────
+
+  function setTaskDuration(taskId, minutes) {
+    minutes = parseInt(minutes, 10);
+    if (!minutes || minutes < 5) return;
+    State.set(s => ({ ...s, tasks: s.tasks.map(t => t.id === taskId ? { ...t, estimatedMinutes: minutes } : t) }));
+  }
+
+  function cycleTaskDifficulty(taskId) {
+    const cycle = { easy: 'core', core: 'stretch', stretch: 'easy' };
+    State.set(s => ({ ...s, tasks: s.tasks.map(t => t.id === taskId ? { ...t, difficulty: cycle[t.difficulty] || 'core' } : t) }));
+    render();
+  }
+
+  function saveTaskNotes(taskId, notes) {
+    notes = (notes || '').trim();
+    State.set(s => ({ ...s, tasks: s.tasks.map(t => t.id === taskId ? { ...t, notes } : t) }));
   }
 
   // ── Focus Mode ────────────────────────────────────────────────────────────
@@ -845,6 +1144,12 @@ const App = (() => {
     }).join('');
 
     return `
+      <div class="control-bar">
+        <span class="ctrl-title">Map</span>
+        <span class="ctrl-sub">${h(goal.title.length > 28 ? goal.title.slice(0,28)+'…' : goal.title)}</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.nav('home')"><i data-lucide="home"></i> Today</button>
+      </div>
       <div class="page">
         <div class="map-page-header">
           <h2>🗺️ Progress Map</h2>
@@ -928,6 +1233,11 @@ const App = (() => {
     const freezes = u.streakFreezes || 0;
 
     return `
+      <div class="control-bar">
+        <span class="ctrl-title">Profile</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.nav('home')"><i data-lucide="home"></i> Today</button>
+      </div>
       <div class="page profile-page">
         <h2>👤 Profile</h2>
 
@@ -1076,6 +1386,12 @@ const App = (() => {
     const pct = totalGoal ? Math.round((totalDone / totalGoal) * 100) : 0;
 
     return `
+      <div class="control-bar">
+        <span class="ctrl-title">Review</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.nav('calendar')"><i data-lucide="calendar"></i> Calendar</button>
+        <button class="ctrl-btn" onclick="App.nav('home')"><i data-lucide="home"></i> Today</button>
+      </div>
       <div class="page review-page">
         <div class="review-header">
           <h2 class="review-title">📋 Weekly Review</h2>
@@ -1954,6 +2270,12 @@ const App = (() => {
     const loadClass = loadPct < 70 ? 'load-ok' : loadPct < 90 ? 'load-warn' : 'load-over';
 
     return `
+      <div class="control-bar">
+        <span class="ctrl-title">Goals</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.nav('home')"><i data-lucide="home"></i> Today</button>
+        <button class="ctrl-btn ctrl-btn-primary" onclick="App.nav('new-goal')"><i data-lucide="plus"></i> New Goal</button>
+      </div>
       <div class="page goals-manager-page">
         <div class="gm-header">
           <h2><i data-lucide="target" class="icon-md"></i> Goals Manager</h2>
@@ -3150,9 +3472,10 @@ const App = (() => {
       else pageHtml = renderHome();
 
       app.innerHTML = `
-        <div class="app-shell">
-          ${renderSidebar(s.user)}
-          <div class="main-content">${pageHtml}</div>
+        <div class="workspace">
+          ${renderLeftPanel(s)}
+          <div class="workspace-center">${pageHtml}</div>
+          ${renderRightPanel(currentPage, s)}
         </div>
       ` + renderObstacleSheet() + renderCalibrationModal() + renderCertificateModal() + renderNotif();
     }
@@ -3255,6 +3578,8 @@ const App = (() => {
     sendPlanChat, applyPlanChanges, discardPlanChanges,
     // Plan Editor (active plan)
     openPlanEditor,
+    // Inline task editing
+    setTaskDuration, cycleTaskDifficulty, saveTaskNotes,
     // Calendar
     calNavWeek, calNavToday, calClickSlot, calCloseModal,
     calAddEvent, calEventClick, calDeleteEvent, calTaskClick, calResolveConflicts,
