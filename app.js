@@ -43,6 +43,11 @@ const App = (() => {
   let focusRunning = false;
   let focusDuration = 25;        // minutes (25 or 50)
   let focusSecondsLeft = 25 * 60;
+  let focusActualSeconds = 0;    // seconds elapsed for effort tracking
+
+  // ── Feature UI State ─────────────────────────────────────────────────────
+  let dismissedStaleGoals = new Set();   // goal IDs whose stale nudge was dismissed
+  let milestoneCompleteModal = null;     // { milestone, tasksDone, xpEarned }
 
   // ── Navigation ───────────────────────────────────────────────────────────
 
@@ -616,9 +621,32 @@ const App = (() => {
     const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
     const adaptiveMode = Decompose.getAdaptiveMode(s.user);
-    const dailyTasks = Decompose.selectDailyTasks(allTasks, goal.hoursPerWeek);
+    const todayStr2 = new Date().toISOString().split('T')[0];
+    const schedules = s.taskSchedules || {};
+    const scheduledTodayIds = new Set(
+      Object.entries(schedules)
+        .filter(([, sched]) => sched?.date === todayStr2)
+        .map(([id]) => id)
+    );
+    // Tasks explicitly scheduled for today come first; fill the rest from AI selection
+    const scheduledTodayTasks = allTasks.filter(t => scheduledTodayIds.has(t.id));
+    const alreadyShownIds = new Set(scheduledTodayTasks.map(t => t.id));
+    const suggestedFill = Decompose.selectDailyTasks(
+      allTasks.filter(t => !alreadyShownIds.has(t.id)),
+      goal.hoursPerWeek
+    );
+    const dailyTasks = [...scheduledTodayTasks, ...suggestedFill];
+
+    // Stale goal nudge: no completions in last 14 days
+    const goalDoneTasks = allTasks.filter(t => t.status === 'done' && t.completedAt);
+    const lastDoneAt = goalDoneTasks.length
+      ? goalDoneTasks.map(t => t.completedAt).sort().pop() : null;
+    const daysSinceActive = lastDoneAt
+      ? Math.floor((Date.now() - new Date(lastDoneAt)) / 864e5) : null;
+    const showStaleNudge = daysSinceActive !== null && daysSinceActive >= 14 && !dismissedStaleGoals.has(goal.id);
+
     const doneTasks = dailyTasks.filter(t => t.status === 'done');
-    const todoTasks = dailyTasks.filter(t => t.status !== 'done');
+    const todoTasks = dailyTasks.filter(t => t.status !== 'done' && !(t.recurrence && t.lastCompletedDate === todayStr2));
     const todayPct = dailyTasks.length ? Math.round((doneTasks.length / dailyTasks.length) * 100) : 0;
     const goalPct = Gamification.getGoalProgress(goal.id, allTasks);
     const identity = Gamification.getGoalIdentity(goal.title);
@@ -630,6 +658,7 @@ const App = (() => {
       rescheduledCount > 0 ? `<div class="ctx-notice"><i data-lucide="calendar-clock" class="icon-sm"></i> ${rescheduledCount} overdue task${rescheduledCount > 1 ? 's' : ''} rescheduled</div>` : '',
       adaptiveMode === 'reduced' ? `<div class="ctx-notice ctx-notice-soft"><i data-lucide="lightbulb" class="icon-sm"></i> Lighter load today — 1 task done = win</div>` : '',
       showWhyReminder && goal.successCriteria ? `<div class="ctx-notice ctx-notice-why"><i data-lucide="heart" class="icon-sm"></i> ${h(goal.successCriteria)} <button class="ctx-dismiss" onclick="App.dismissWhy()">✕</button></div>` : '',
+      showStaleNudge ? `<div class="ctx-notice ctx-notice-stale"><i data-lucide="clock" class="icon-sm"></i> You haven't completed a task for <strong>${daysSinceActive} days</strong>. Still working on <em>${h(goal.title)}</em>? <button class="ctx-dismiss" onclick="App.dismissStaleNudge('${h(goal.id)}')">✕</button></div>` : '',
     ].filter(Boolean).join('');
 
     return `
@@ -720,8 +749,54 @@ const App = (() => {
 
       </div>
       ${showReflection ? renderReflectionModal(showReflection) : ''}
+      ${milestoneCompleteModal ? renderMilestoneCompleteModal() : ''}
       ${renderBottomNav()}
     `;
+  }
+
+  // ── Milestone Completion Modal ────────────────────────────────────────────
+
+  function showMilestoneComplete(milestone, tasksDone, xpEarned) {
+    milestoneCompleteModal = { milestone, tasksDone, xpEarned };
+    render();
+  }
+
+  function dismissMilestoneComplete(viewCert) {
+    const data = milestoneCompleteModal;
+    milestoneCompleteModal = null;
+    if (viewCert && data) showCertificate('milestone', data.milestone);
+    else render();
+  }
+
+  function renderMilestoneCompleteModal() {
+    const { milestone, tasksDone, xpEarned } = milestoneCompleteModal;
+    const s = State.get();
+    const msIdx = s.milestones.findIndex(m => m.id === milestone.id);
+    const nextMs = s.milestones[msIdx + 1];
+    return `
+      <div class="ms-complete-overlay" onclick="App.dismissMilestoneComplete(false)">
+        <div class="ms-complete-modal" onclick="event.stopPropagation()">
+          <div class="ms-complete-sparkle">✨</div>
+          <div class="ms-complete-world" style="color:${milestone.color}">World ${msIdx + 1} Complete!</div>
+          <h2 class="ms-complete-title">${h(milestone.title)}</h2>
+          <div class="ms-complete-stats">
+            <div class="ms-stat">
+              <div class="ms-stat-val">${tasksDone}</div>
+              <div class="ms-stat-label">Tasks Done</div>
+            </div>
+            <div class="ms-stat">
+              <div class="ms-stat-val">+${xpEarned}</div>
+              <div class="ms-stat-label">XP Earned</div>
+            </div>
+          </div>
+          <button class="btn btn-primary ms-complete-continue" onclick="App.dismissMilestoneComplete(false)">
+            ${nextMs ? `Continue to World ${msIdx + 2} →` : 'Finish Quest →'}
+          </button>
+          <button class="ms-complete-cert" onclick="App.dismissMilestoneComplete(true)">
+            <i data-lucide="award" class="icon-xs"></i> View Certificate
+          </button>
+        </div>
+      </div>`;
   }
 
   // ── Reflection Modal ──────────────────────────────────────────────────────
@@ -798,20 +873,26 @@ const App = (() => {
 
   // ─── TASK CARD — collapsed + expanded ──────────────────────────────────────
 
-  function renderTaskCard(task, user) {
-    const s = user ? { user } : State.get();
-    const u = s.user || s;
+  function renderTaskCard(task, user, opts = {}) {
+    const s = State.get();
+    const u = s.user || user || {};
     const mult = Gamification.getMomentumMultiplier(u.streak || 0);
-    const effectiveXP = Math.round(task.xpReward * mult);
-    const isDone = task.status === 'done';
+    const effectiveXP = Math.round((task.xpReward || 50) * mult);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isDoneToday = task.recurrence && task.lastCompletedDate === todayStr;
+    const isDone = task.status === 'done' || isDoneToday;
     const isExpanded = expandedTaskId === task.id;
 
     if (isDone) {
+      const actualNote = task.actualMinutes && task.actualMinutes !== task.estimatedMinutes
+        ? ` · actual: ${task.actualMinutes}m` : '';
       return `
         <div class="task-card done" id="tc-${task.id}">
           <div class="tc-done-check">✓</div>
           <div class="task-body">
-            <div class="task-title" style="text-decoration:line-through;opacity:0.6;">${task.title}</div>
+            <div class="task-title" style="text-decoration:line-through;opacity:0.6;">${h(task.title)}</div>
+            ${isDoneToday ? '<span class="tc-recur-done">🔁 Done for today</span>' : ''}
+            ${actualNote ? `<span class="tc-actual-note">${actualNote}</span>` : ''}
           </div>
           <span class="meta-pill xp" style="flex-shrink:0;">+${effectiveXP} XP</span>
         </div>`;
@@ -819,14 +900,16 @@ const App = (() => {
 
     if (!isExpanded) {
       // ── COLLAPSED — whole card is tappable ──
-      const todayStr = new Date().toISOString().split('T')[0];
       const tomorrowStr = Decompose.addDays(todayStr, 1);
       const deadlineLabel = !task.deadline ? ''
         : task.deadline === todayStr ? '<span class="meta-pill due-today">due today</span>'
         : task.deadline === tomorrowStr ? '<span class="meta-pill due-soon">due tomorrow</span>'
         : '';
+      // Blocked state: any unresolved prerequisite task
+      const blockers = (task.blockedBy || []).map(id => s.tasks.find(t => t.id === id)).filter(Boolean);
+      const isBlocked = blockers.some(bt => bt.status !== 'done' && !(bt.recurrence && bt.lastCompletedDate === todayStr));
       return `
-        <div class="task-card ${task.isBoss ? 'boss' : 'normal'}" id="tc-${task.id}"
+        <div class="task-card ${task.isBoss ? 'boss' : 'normal'} ${isBlocked ? 'tc-blocked' : ''}" id="tc-${task.id}"
           onclick="App.expandTask('${task.id}')" style="cursor:pointer;">
           <div class="tc-collapsed">
             <div class="tc-top-row">
@@ -834,6 +917,7 @@ const App = (() => {
                     onclick="event.stopPropagation();App.cycleTaskDifficulty('${task.id}')"
                     title="Click to change difficulty">${task.difficulty}</span>
               <span class="tc-title-collapsed">${h(task.title)}</span>
+              ${task.recurrence ? `<span class="tc-recur-badge" title="Repeating ${task.recurrence}">🔁</span>` : ''}
               ${task.isBoss ? '<span class="meta-pill boss-xp"><i data-lucide="swords" class="icon-xs"></i> Boss</span>' : ''}
             </div>
             <div class="tc-bottom-row">
@@ -844,7 +928,10 @@ const App = (() => {
               </select>
               <span class="meta-pill ${task.isBoss ? 'boss-xp' : 'xp'}">+${effectiveXP} XP${mult > 1 ? ` ×${mult}` : ''}</span>
               ${deadlineLabel}
-              <span class="btn-start"><i data-lucide="play" class="icon-xs"></i> Start Task</span>
+              ${isBlocked
+                ? `<span class="tc-blocked-badge">🔒 Blocked</span>`
+                : `<span class="btn-start"><i data-lucide="play" class="icon-xs"></i> Start Task</span>`
+              }
             </div>
           </div>
         </div>`;
@@ -920,6 +1007,37 @@ const App = (() => {
         </div>
         ` : ''}
 
+        <!-- Recurrence toggle -->
+        <div class="tc-recurrence">
+          <div class="tc-section-label"><i data-lucide="repeat" class="icon-xs"></i> Repeat</div>
+          <div class="tc-recur-btns">
+            <button class="tc-recur-btn ${task.recurrence === 'daily' ? 'active' : ''}"
+                    onclick="event.stopPropagation();App.toggleRecurrence('${task.id}','daily')">Daily</button>
+            <button class="tc-recur-btn ${task.recurrence === 'weekly' ? 'active' : ''}"
+                    onclick="event.stopPropagation();App.toggleRecurrence('${task.id}','weekly')">Weekly</button>
+            ${task.recurrence ? `<button class="tc-recur-btn tc-recur-clear" onclick="event.stopPropagation();App.toggleRecurrence('${task.id}',null)">✕ Off</button>` : ''}
+          </div>
+        </div>
+
+        <!-- Blocked by -->
+        <div class="tc-blockers">
+          <div class="tc-section-label"><i data-lucide="lock" class="icon-xs"></i> Blocked by</div>
+          <div class="tc-blocker-tags">
+            ${(task.blockedBy || []).map(bid => {
+              const bt = s.tasks.find(t => t.id === bid);
+              if (!bt) return '';
+              const btDone = bt.status === 'done' || (bt.recurrence && bt.lastCompletedDate === todayStr);
+              return `<span class="tc-blocker-tag ${btDone ? 'resolved' : ''}">${h(bt.title.length > 28 ? bt.title.slice(0,28)+'…' : bt.title)} <button onclick="event.stopPropagation();App.removeBlocker('${h(task.id)}','${h(bid)}')">×</button></span>`;
+            }).join('')}
+          </div>
+          <select class="tc-blocker-add" onclick="event.stopPropagation()"
+                  onchange="event.stopPropagation();if(this.value){App.addBlocker('${h(task.id)}',this.value);this.value='';}">
+            <option value="">+ Add prerequisite...</option>
+            ${s.tasks.filter(t => t.id !== task.id && t.status !== 'done' && !(task.blockedBy || []).includes(t.id))
+              .map(t => `<option value="${h(t.id)}">${h(t.title.length > 45 ? t.title.slice(0,45)+'…' : t.title)}</option>`).join('')}
+          </select>
+        </div>
+
         <!-- Notes (inline editable) -->
         <div class="tc-notes-block">
           <textarea class="tc-notes-input" placeholder="Add notes…"
@@ -934,7 +1052,7 @@ const App = (() => {
           <button class="btn btn-ghost btn-stuck" onclick="App.openObstacle('${task.id}')"><i data-lucide="alert-triangle" class="icon-sm"></i> Stuck</button>
           <button class="btn btn-primary ${task.isBoss ? 'boss-complete-btn' : ''}"
             onclick="App.completeTask('${task.id}', event)">
-            ${task.isBoss ? '<i data-lucide="swords" class="icon-sm"></i> Complete Boss' : '<i data-lucide="check" class="icon-sm"></i> Mark Complete'}
+            ${task.isBoss ? '<i data-lucide="swords" class="icon-sm"></i> Complete Boss' : task.recurrence ? '<i data-lucide="check" class="icon-sm"></i> Done for Today' : '<i data-lucide="check" class="icon-sm"></i> Mark Complete'}
           </button>
         </div>
       </div>`;
@@ -951,6 +1069,40 @@ const App = (() => {
   function cycleTaskDifficulty(taskId) {
     const cycle = { easy: 'core', core: 'stretch', stretch: 'easy' };
     State.set(s => ({ ...s, tasks: s.tasks.map(t => t.id === taskId ? { ...t, difficulty: cycle[t.difficulty] || 'core' } : t) }));
+    render();
+  }
+
+  function toggleRecurrence(taskId, type) {
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId ? { ...t, recurrence: type || null } : t),
+    }));
+    render();
+  }
+
+  function addBlocker(taskId, blockerTaskId) {
+    if (!blockerTaskId || taskId === blockerTaskId) return;
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId
+        ? { ...t, blockedBy: [...new Set([...(t.blockedBy || []), blockerTaskId])] }
+        : t),
+    }));
+    render();
+  }
+
+  function removeBlocker(taskId, blockerTaskId) {
+    State.set(st => ({
+      ...st,
+      tasks: st.tasks.map(t => t.id === taskId
+        ? { ...t, blockedBy: (t.blockedBy || []).filter(id => id !== blockerTaskId) }
+        : t),
+    }));
+    render();
+  }
+
+  function dismissStaleNudge(goalId) {
+    dismissedStaleGoals.add(goalId);
     render();
   }
 
@@ -971,6 +1123,7 @@ const App = (() => {
     focusTaskId = taskId;
     focusDuration = 25;
     focusSecondsLeft = 25 * 60;
+    focusActualSeconds = 0;
     focusRunning = false;
     if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
     if (typeof Space !== 'undefined') Space.setFocusMode(true);
@@ -990,6 +1143,7 @@ const App = (() => {
       focusRunning = true;
       focusTimerInterval = setInterval(() => {
         focusSecondsLeft--;
+        focusActualSeconds++;
         // Update timer display directly for performance
         const disp = document.querySelector('.focus-timer-display');
         if (disp) {
@@ -1580,6 +1734,23 @@ const App = (() => {
     render();
   }
 
+  function regeneratePlan() {
+    draftPlan = null;
+    draftOptimizing = true;
+    render();
+    Decompose.buildPlanAI(clarData).then(plan => {
+      draftPlan = plan;
+      draftOptimizing = false;
+      currentPage = 'plan-preview';
+      render();
+    }).catch(() => {
+      draftPlan = { ...Decompose.buildPlan(clarData), _usedFallback: true };
+      draftOptimizing = false;
+      currentPage = 'plan-preview';
+      render();
+    });
+  }
+
   function approvePlan() {
     if (!draftPlan) return;
     const { goal, milestones, tasks, nodes } = draftPlan;
@@ -1886,20 +2057,48 @@ const App = (() => {
   function completeTask(taskId, event) {
     const s = State.get();
     const task = s.tasks.find(t => t.id === taskId);
-    if (!task || task.status === 'done') return;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isRecurDoneToday = task?.recurrence && task.lastCompletedDate === todayStr;
+    if (!task || task.status === 'done' || isRecurDoneToday) return;
 
     const clientY = event ? event.clientY : 180;
+
+    // Capture actual focus time before clearing focus state
+    const actualMinutes = (focusTaskId === taskId && focusActualSeconds > 30)
+      ? Math.round(focusActualSeconds / 60) : null;
 
     // Exit focus mode if completing the focused task
     if (focusTaskId === taskId) {
       if (focusTimerInterval) { clearInterval(focusTimerInterval); focusTimerInterval = null; }
       focusRunning = false;
+      focusActualSeconds = 0;
       focusTaskId = null;
       if (typeof Space !== 'undefined') Space.setFocusMode(false);
       currentPage = 'home';
     }
 
-    const updatedTasks = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done', completedAt: new Date().toISOString() } : t);
+    // ── Recurring task: award XP but reset for next occurrence ───────────────
+    if (task.recurrence) {
+      const tempDone = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done' } : t);
+      const result = Gamification.completeTask(s.user, task, tempDone, s.milestones);
+      const activeHistory = [...new Set([...(result.user.activeHistory || []), todayStr])];
+      State.set(st => ({
+        ...st,
+        user: { ...result.user, activeHistory },
+        tasks: st.tasks.map(t => t.id === taskId
+          ? { ...t, lastCompletedDate: todayStr, ...(actualMinutes ? { actualMinutes } : {}) }
+          : t),
+      }));
+      if (typeof Space !== 'undefined') Space.burst(event?.clientX, clientY);
+      showXPAnim(result.xpEarned, result.multiplier, task.isBoss, clientY);
+      showNotif(`Habit done for today! 🔥`);
+      setTimeout(() => { showReflection = taskId; render(); }, 1400);
+      return;
+    }
+
+    const updatedTasks = s.tasks.map(t => t.id === taskId
+      ? { ...t, status: 'done', completedAt: new Date().toISOString(), ...(actualMinutes ? { actualMinutes } : {}) }
+      : t);
     const result = Gamification.completeTask(s.user, task, updatedTasks, s.milestones);
     let { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus, seasonalEarned, seasonalQuest } = result;
 
@@ -1920,7 +2119,11 @@ const App = (() => {
             : m
         ),
       }));
-      setTimeout(() => showCertificate('milestone', justCompletedMilestone), 1800);
+      const msDoneTasks = updatedTasks.filter(t => t.milestoneId === justCompletedMilestone.id && t.status === 'done').length;
+      setTimeout(() => {
+        milestoneCompleteModal = { milestone: justCompletedMilestone, tasksDone: msDoneTasks, xpEarned: result.xpEarned || 0 };
+        render();
+      }, 1800);
     }
 
     // Detect goal completion
@@ -2494,7 +2697,10 @@ const App = (() => {
                <div class="preview-header-badge">Live Edit</div>`
             : `<button class="btn-back" onclick="App.backToQuestions()">← Edit</button>
                <div class="preview-header-title">Your Quest Plan</div>
-               <button class="btn btn-primary" onclick="App.approvePlan()">Approve →</button>`
+               <div class="preview-header-actions">
+                 <button class="btn btn-ghost btn-regen" onclick="App.regeneratePlan()"><i data-lucide="refresh-cw" class="icon-sm"></i> Regenerate</button>
+                 <button class="btn btn-primary" onclick="App.approvePlan()">Approve →</button>
+               </div>`
           }
         </div>
 
@@ -3636,6 +3842,8 @@ const App = (() => {
     openPlanEditor,
     // Inline task editing
     setTaskDuration, cycleTaskDifficulty, saveTaskNotes,
+    toggleRecurrence, addBlocker, removeBlocker, dismissStaleNudge,
+    dismissMilestoneComplete, regeneratePlan,
     // Calendar
     calNavWeek, calNavToday, calClickSlot, calCloseModal,
     calAddEvent, calEventClick, calDeleteEvent, calTaskClick, calResolveConflicts,

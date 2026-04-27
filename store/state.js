@@ -55,6 +55,11 @@ const State = (() => {
       if (!saved.userAvailability) saved.userAvailability = { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
       // Migrate goals: ensure every goal has a status field
       if (saved.goals) saved.goals = saved.goals.map(g => g.status ? g : { ...g, status: 'active' });
+      // Migrate tasks: ensure new fields exist
+      if (saved.tasks) saved.tasks = saved.tasks.map(t => ({
+        recurrence: null, lastCompletedDate: null, blockedBy: [], actualMinutes: null,
+        ...t,
+      }));
       return saved;
     } catch { return { ...defaults }; }
   }

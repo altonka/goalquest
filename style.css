@@ -2700,3 +2700,110 @@ body.cal-dragging .cal-day-body:hover { background: rgba(79,70,229,0.04); }
 
 .pcp-msg-assistant { }
 .freezes { }
+
+/* ── Stale goal nudge ──────────────────────────────────────────────────── */
+.ctx-notice-stale {
+  background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.4);
+  color: var(--text);
+}
+.ctx-notice-stale strong { color: var(--accent); }
+
+/* ── Recurring task badges ─────────────────────────────────────────────── */
+.tc-recur-badge {
+  font-size: 0.72rem; margin-left: 4px; opacity: 0.7;
+}
+.tc-recur-done {
+  font-size: 0.7rem; color: var(--success); margin-top: 2px;
+}
+.tc-actual-note {
+  font-size: 0.7rem; color: var(--muted); margin-top: 2px;
+}
+
+/* Blocked task card */
+.task-card.tc-blocked { opacity: 0.7; }
+.task-card.tc-blocked .tc-top-row { filter: saturate(0.6); }
+.tc-blocked-badge {
+  font-size: 0.72rem; color: var(--danger); background: var(--danger-l);
+  border-radius: 99px; padding: 2px 8px; flex-shrink: 0;
+}
+
+/* ── Expanded card: recurrence & blockers ──────────────────────────────── */
+.tc-recurrence {
+  padding: 10px 16px; border-top: 1px solid var(--border);
+}
+.tc-recur-btns {
+  display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;
+}
+.tc-recur-btn {
+  padding: 4px 12px; border-radius: 99px;
+  border: 1px solid var(--border); background: var(--surface2);
+  font-size: 0.78rem; color: var(--muted); cursor: pointer;
+  font-family: inherit; transition: all var(--t);
+}
+.tc-recur-btn:hover { border-color: var(--primary); color: var(--primary); }
+.tc-recur-btn.active {
+  background: var(--primary-l); border-color: var(--primary); color: var(--primary); font-weight: 600;
+}
+.tc-recur-clear { border-color: transparent; color: var(--muted2); }
+
+.tc-blockers {
+  padding: 10px 16px; border-top: 1px solid var(--border);
+}
+.tc-blocker-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.tc-blocker-tag {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--danger-l); border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 99px; padding: 3px 8px; font-size: 0.74rem; color: var(--danger);
+}
+.tc-blocker-tag.resolved { background: var(--success-l); border-color: rgba(16,185,129,0.25); color: var(--success); }
+.tc-blocker-tag button {
+  background: none; border: none; cursor: pointer; color: inherit;
+  font-size: 0.8rem; padding: 0 2px; line-height: 1;
+}
+.tc-blocker-add {
+  margin-top: 4px; font-size: 0.8rem; color: var(--muted);
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 4px 8px; font-family: inherit; cursor: pointer;
+}
+
+/* ── Milestone completion modal ────────────────────────────────────────── */
+.ms-complete-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; animation: fadeIn 0.25s ease;
+}
+.ms-complete-modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; padding: 40px 32px;
+  max-width: 360px; width: 90%; text-align: center;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  animation: slideUp 0.35s cubic-bezier(.16,1,.3,1);
+}
+.ms-complete-sparkle { font-size: 2.5rem; line-height: 1; margin-bottom: 8px; }
+.ms-complete-world {
+  font-size: 0.78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.ms-complete-title {
+  font-size: 1.4rem; font-weight: 800; color: var(--text);
+  margin: 0 0 24px; line-height: 1.2;
+}
+.ms-complete-stats {
+  display: flex; gap: 24px; justify-content: center; margin-bottom: 28px;
+}
+.ms-stat { text-align: center; }
+.ms-stat-val { font-size: 1.8rem; font-weight: 800; color: var(--text); line-height: 1; }
+.ms-stat-label { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+.ms-complete-continue { width: 100%; margin-bottom: 10px; }
+.ms-complete-cert {
+  background: none; border: none; color: var(--muted); font-size: 0.8rem;
+  cursor: pointer; font-family: inherit; transition: color var(--t);
+  display: flex; align-items: center; gap: 4px; justify-content: center; width: 100%;
+}
+.ms-complete-cert:hover { color: var(--text); }
+
+/* ── Plan preview: header actions row ──────────────────────────────────── */
+.preview-header-actions { display: flex; gap: 8px; align-items: center; }
+.btn-regen {
+  font-size: 0.8rem; padding: 6px 12px; display: flex; align-items: center; gap: 4px;
+}
