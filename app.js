@@ -150,13 +150,15 @@ const App = (() => {
   function renderLeftPanel(s) {
     const li = Gamification.getLevelInfo(s.user.xp);
     const goals = s.goals || [];
+    const cls = s.user.class ? Gamification.CLASSES[s.user.class] : null;
+    const rankTitle = Gamification.getRankTitle(s.user);
     const items = [
-      { id: 'home',          icon: 'home',           label: 'Today'    },
-      { id: 'goals-manager', icon: 'target',         label: 'Goals'    },
-      { id: 'map',           icon: 'map',            label: 'Map'      },
-      { id: 'calendar',      icon: 'calendar',       label: 'Calendar' },
-      { id: 'review',        icon: 'bar-chart-2',    label: 'Review'   },
-      { id: 'profile',       icon: 'user',           label: 'Profile'  },
+      { id: 'home',          icon: 'home',           label: 'Today'     },
+      { id: 'goals-manager', icon: 'target',         label: 'Campaigns' },
+      { id: 'map',           icon: 'map',            label: 'Map'       },
+      { id: 'calendar',      icon: 'calendar',       label: 'Calendar'  },
+      { id: 'review',        icon: 'bar-chart-2',    label: 'Review'    },
+      { id: 'avatar',        icon: 'shield',         label: 'Dossier'   },
     ];
     const goalItems = goals.map(g => {
       const pct = Gamification.getGoalProgress(g.id, s.tasks);
@@ -184,24 +186,31 @@ const App = (() => {
         </nav>
         ${goals.length ? `
         <div class="lp-divider"></div>
-        <div class="lp-section-label">Goals</div>
+        <div class="lp-section-label">Campaigns</div>
         <div class="lp-goals">${goalItems}</div>
         <button class="lp-add-goal" onclick="App.nav('new-goal')">
-          <i data-lucide="plus" class="icon-sm"></i> Add Goal
+          <i data-lucide="plus" class="icon-sm"></i> New Campaign
         </button>` : `
         <div class="lp-goals">
           <button class="lp-add-goal" style="margin-top:12px" onclick="App.nav('new-goal')">
-            <i data-lucide="plus" class="icon-sm"></i> Add Goal
+            <i data-lucide="plus" class="icon-sm"></i> New Campaign
           </button>
         </div>`}
+        <div class="lp-character-card ${cls ? 'lp-cc-classed armor-' + (s.user.gear?.armor || 'default') : ''}">
+          ${cls ? `<span class="lp-class-icon" style="color:${cls.color}">${cls.icon}</span>` : '<span class="lp-class-icon lp-class-none"><i data-lucide="shield" class="icon-xs"></i></span>'}
+          <div class="lp-cc-info">
+            <div class="lp-cc-rank">${h(rankTitle)}</div>
+            <div class="lp-cc-sub">Lv.${s.user.level} ${cls ? `· ${cls.label}` : '<button class="lp-pick-class" onclick="App.nav(\'class-select\')">Pick Class →</button>'}</div>
+          </div>
+          <div class="lp-coins"><i data-lucide="coins" class="icon-xs"></i> ${s.user.coins || 0}</div>
+        </div>
         <div class="lp-user">
-          <div class="lp-user-level">Lv.${s.user.level} · ${h(li.current.title)}</div>
           <div class="lp-user-xp-bar">
             <div class="lp-user-xp-fill" style="width:${li.progress}%"></div>
           </div>
-          <div class="lp-user-streak">
-            <i data-lucide="flame" class="icon-xs" style="color:var(--accent)"></i>
-            ${s.user.streak}-day streak
+          <div class="lp-user-meta">
+            <span>${s.user.xp} XP · ${li.progress}%${li.next ? ` to Lv.${li.next.level}` : ' MAX'}</span>
+            <span><i data-lucide="flame" class="icon-xs" style="color:var(--accent)"></i> ${s.user.streak}d</span>
           </div>
         </div>
       </div>`;
@@ -599,9 +608,9 @@ const App = (() => {
       return `
         <div class="page">
           <div class="empty-state">
-            <h2>All goals paused</h2>
-            <p>Resume a goal or add a new one to continue.</p>
-            <button class="btn btn-primary" onclick="App.nav('goals-manager')">Manage Goals</button>
+            <h2>All campaigns paused</h2>
+            <p>Resume a campaign or add a new one to continue.</p>
+            <button class="btn btn-primary" onclick="App.nav('goals-manager')">Manage Campaigns</button>
           </div>
           ${renderBottomNav()}
         </div>
@@ -672,19 +681,19 @@ const App = (() => {
       </div>
       <div class="page">
 
-        <!-- Header: greeting + quest title + actions -->
+        <!-- Header: greeting + campaign title + actions -->
         <div class="quest-header">
-          <div class="home-greeting">${greeting}</div>
+          <div class="home-greeting">${greeting}${s.user.class ? `, ${Gamification.CLASSES[s.user.class].label}` : ''}</div>
           <div class="quest-header-row">
             <div>
-              <div class="quest-label">Active Quest</div>
+              <div class="quest-label">Active Campaign</div>
               <div class="quest-title">${h(goal.title)}</div>
             </div>
             <div class="quest-header-actions">
               <button class="btn-edit-plan" onclick="App.openPlanEditor()" title="Edit plan with AI">
                 <i data-lucide="pencil" class="icon-sm"></i> Edit Plan
               </button>
-              <button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another goal">＋</button>
+              <button class="btn-add-goal" onclick="App.nav('new-goal')" title="Add another campaign">＋</button>
             </div>
           </div>
         </div>
@@ -740,10 +749,13 @@ const App = (() => {
           <div class="gp-bar"><div class="gp-fill" style="width:${goalPct}%"></div></div>
         </div>
 
+        <!-- Weekly Challenge -->
+        ${renderWeeklyChallengeCard(s)}
+
         <!-- Identity — only shown after meaningful progress -->
         ${s.user.totalTasksDone >= 5 ? `
         <div class="identity-bar">
-          <span>You've completed <strong>${s.user.totalTasksDone}</strong> tasks. You're becoming <strong>${identity}</strong>.</span>
+          <span>You've completed <strong>${s.user.totalTasksDone}</strong> actions. You're becoming <strong>${identity}</strong>.</span>
         </div>
         ` : ''}
 
@@ -773,24 +785,31 @@ const App = (() => {
     const s = State.get();
     const msIdx = s.milestones.findIndex(m => m.id === milestone.id);
     const nextMs = s.milestones[msIdx + 1];
+    const cls = s.user.class ? Gamification.CLASSES[s.user.class] : null;
+    const coinsAwarded = Gamification.COINS.chapter;
     return `
       <div class="ms-complete-overlay" onclick="App.dismissMilestoneComplete(false)">
         <div class="ms-complete-modal" onclick="event.stopPropagation()">
           <div class="ms-complete-sparkle">✨</div>
-          <div class="ms-complete-world" style="color:${milestone.color}">World ${msIdx + 1} Complete!</div>
+          <div class="ms-complete-world" style="color:${milestone.color}">Chapter ${msIdx + 1} Complete!</div>
           <h2 class="ms-complete-title">${h(milestone.title)}</h2>
           <div class="ms-complete-stats">
             <div class="ms-stat">
               <div class="ms-stat-val">${tasksDone}</div>
-              <div class="ms-stat-label">Tasks Done</div>
+              <div class="ms-stat-label">Actions Done</div>
             </div>
             <div class="ms-stat">
               <div class="ms-stat-val">+${xpEarned}</div>
               <div class="ms-stat-label">XP Earned</div>
             </div>
+            <div class="ms-stat">
+              <div class="ms-stat-val">+${coinsAwarded}</div>
+              <div class="ms-stat-label">Coins</div>
+            </div>
           </div>
+          ${cls ? `<div class="ms-complete-class-bonus" style="color:${cls.color}">${cls.icon} ${cls.label} bonus active</div>` : ''}
           <button class="btn btn-primary ms-complete-continue" onclick="App.dismissMilestoneComplete(false)">
-            ${nextMs ? `Continue to World ${msIdx + 2} →` : 'Finish Quest →'}
+            ${nextMs ? `Continue to Chapter ${msIdx + 2} →` : 'Complete Campaign →'}
           </button>
           <button class="ms-complete-cert" onclick="App.dismissMilestoneComplete(true)">
             <i data-lucide="award" class="icon-xs"></i> View Certificate
@@ -1109,6 +1128,263 @@ const App = (() => {
   function saveTaskNotes(taskId, notes) {
     notes = (notes || '').trim();
     State.set(s => ({ ...s, tasks: s.tasks.map(t => t.id === taskId ? { ...t, notes } : t) }));
+  }
+
+  // ── RPG: Class Selection ──────────────────────────────────────────────────
+
+  function selectClass(className) {
+    if (!Gamification.CLASSES[className]) return;
+    State.set(s => ({ ...s, user: { ...s.user, class: className } }));
+    showNotif(`Class set: ${Gamification.CLASSES[className].label}!`);
+    nav('home');
+  }
+
+  function renderClassSelect() {
+    const s = State.get();
+    const current = s.user.class;
+    return `
+      <div class="control-bar">
+        <span class="ctrl-title">Choose Your Class</span>
+        <span class="ctrl-spacer"></span>
+        ${current ? `<button class="ctrl-btn" onclick="App.nav('avatar')">← Back</button>` : ''}
+      </div>
+      <div class="page class-select-page">
+        <div class="cs-header">
+          <div class="cs-title">What best describes your journey?</div>
+          <div class="cs-sub">Your class shapes your XP bonuses and how your stats grow. You can change it anytime.</div>
+        </div>
+        <div class="cs-cards">
+          ${Object.values(Gamification.CLASSES).map(cls => `
+            <button class="cs-card ${current === cls.id ? 'cs-card-active' : ''}"
+                    onclick="App.selectClass('${cls.id}')"
+                    style="--class-color:${cls.color}">
+              <div class="cs-card-icon" style="color:${cls.color}">${cls.icon}</div>
+              <div class="cs-card-label">${cls.label}</div>
+              <div class="cs-card-desc">${cls.desc}</div>
+              <div class="cs-card-passive">
+                <i data-lucide="zap" class="icon-xs"></i>
+                ${cls.passive}
+              </div>
+              ${current === cls.id ? '<div class="cs-card-check">✓ Active</div>' : ''}
+            </button>
+          `).join('')}
+        </div>
+        <div style="height:32px;"></div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  }
+
+  // ── RPG: Avatar / Dossier ─────────────────────────────────────────────────
+
+  function equipGear(slot, itemId) {
+    if (!['sigil','armor','emblem'].includes(slot)) return;
+    State.set(s => ({
+      ...s,
+      user: { ...s.user, gear: { ...(s.user.gear || {}), [slot]: itemId } },
+    }));
+    showNotif(`${slot.charAt(0).toUpperCase() + slot.slice(1)} equipped!`);
+    render();
+  }
+
+  function buyArmor(armorId) {
+    const s = State.get();
+    const armor = Gamification.GEAR.armors.find(a => a.id === armorId);
+    if (!armor) return;
+    if ((s.user.coins || 0) < armor.price) { showNotif('Not enough coins!', 'error'); return; }
+    const owned = [...new Set([...(s.user.ownedArmors || ['default']), armorId])];
+    State.set(st => ({
+      ...st,
+      user: { ...st.user, coins: (st.user.coins || 0) - armor.price, ownedArmors: owned },
+    }));
+    showNotif(`${armor.label} armor purchased!`);
+    render();
+  }
+
+  function renderStatArc(value, label, color) {
+    const r = 15.9;
+    const circ = 2 * Math.PI * r;
+    const fill = (value / 100) * circ;
+    return `
+      <div class="stat-arc-wrap">
+        <svg class="stat-arc-svg" viewBox="0 0 36 36">
+          <circle class="stat-arc-bg" cx="18" cy="18" r="${r}" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="3"/>
+          <circle class="stat-arc-fill" cx="18" cy="18" r="${r}" fill="none"
+            stroke="${color}" stroke-width="3"
+            stroke-dasharray="${fill.toFixed(1)} ${circ.toFixed(1)}"
+            stroke-dashoffset="${(circ * 0.25).toFixed(1)}"
+            stroke-linecap="round"/>
+          <text x="18" y="21" text-anchor="middle" class="stat-arc-num" fill="${color}">${value}</text>
+        </svg>
+        <div class="stat-arc-label">${label}</div>
+      </div>`;
+  }
+
+  function renderAvatar() {
+    const s = State.get();
+    const u = s.user;
+    const li = Gamification.getLevelInfo(u.xp);
+    const cls = u.class ? Gamification.CLASSES[u.class] : null;
+    const rankTitle = Gamification.getRankTitle(u);
+    const stats = Gamification.computeStats(u, s.tasks, s.taskSchedules);
+    const unlockedSigils  = Gamification.getUnlockedSigils(u);
+    const unlockedEmblems = Gamification.getUnlockedEmblems(u);
+    const ownedArmors     = Gamification.getOwnedArmors(u);
+    const gear = u.gear || { sigil: null, armor: 'default', emblem: null };
+    const equippedSigil  = Gamification.GEAR.sigils.find(x => x.id === gear.sigil);
+    const equippedArmor  = Gamification.GEAR.armors.find(x => x.id === gear.armor) || Gamification.GEAR.armors[0];
+    const equippedEmblem = Gamification.GEAR.emblems.find(x => x.id === gear.emblem);
+    const prestige = Gamification.getPrestigeTitle(u);
+    const classColor = cls ? cls.color : 'var(--primary)';
+
+    return `
+      <div class="control-bar">
+        <span class="ctrl-title">Character Dossier</span>
+        <span class="ctrl-spacer"></span>
+        <button class="ctrl-btn" onclick="App.nav('class-select')"><i data-lucide="refresh-cw" class="icon-sm"></i> Change Class</button>
+      </div>
+      <div class="page avatar-page">
+
+        <div class="av-card armor-${equippedArmor.id}" style="--class-color:${classColor}">
+          <div class="av-card-top">
+            <div class="av-sigil-slot">
+              ${equippedSigil
+                ? `<span class="av-sigil-icon" style="color:${classColor}">${equippedSigil.icon}</span>`
+                : `<span class="av-sigil-empty"><i data-lucide="shield" class="icon-sm"></i></span>`}
+            </div>
+            <div class="av-identity">
+              <div class="av-rank-title">${h(rankTitle)}</div>
+              <div class="av-level">Level ${u.level}${prestige ? ` · ${prestige}` : ''}</div>
+            </div>
+            <div class="av-coins-badge">
+              <i data-lucide="coins" class="icon-xs"></i> ${u.coins || 0}
+            </div>
+          </div>
+
+          <div class="av-class-row">
+            ${cls
+              ? `<span class="av-class-chip" style="background:${classColor}22;color:${classColor};border-color:${classColor}44">${cls.icon} ${cls.label}</span>
+                 <span class="av-class-passive">${cls.passive}</span>`
+              : `<button class="av-pick-class-btn" onclick="App.nav('class-select')">Choose your class →</button>`}
+          </div>
+
+          <div class="av-stats-row">
+            ${renderStatArc(stats.focus,       'Focus',       classColor)}
+            ${renderStatArc(stats.discipline,  'Discipline',  'var(--accent)')}
+            ${renderStatArc(stats.consistency, 'Consistency', 'var(--success)')}
+          </div>
+
+          ${equippedEmblem ? `
+          <div class="av-emblem-row">
+            <span class="av-emblem">${equippedEmblem.icon} ${equippedEmblem.label}</span>
+          </div>` : ''}
+        </div>
+
+        <!-- Gear Loadout -->
+        <div class="av-section-title">Gear Loadout</div>
+
+        <div class="av-gear-group">
+          <div class="av-gear-label"><i data-lucide="hexagon" class="icon-xs"></i> Sigil</div>
+          <div class="av-gear-row">
+            ${unlockedSigils.length === 0
+              ? `<div class="av-gear-empty">Complete chapters to unlock sigils</div>`
+              : unlockedSigils.map(sg => `
+                <button class="av-gear-item ${gear.sigil === sg.id ? 'av-gear-equipped' : ''}"
+                        onclick="App.equipGear('sigil','${sg.id}')"
+                        title="${sg.desc}" style="color:${classColor}">
+                  ${sg.icon}<span>${sg.label}</span>
+                  ${gear.sigil === sg.id ? '<span class="av-gear-check">✓</span>' : ''}
+                </button>`).join('')}
+          </div>
+        </div>
+
+        <div class="av-gear-group">
+          <div class="av-gear-label"><i data-lucide="layers" class="icon-xs"></i> Armor Theme</div>
+          <div class="av-gear-row">
+            ${Gamification.GEAR.armors.map(arm => {
+              const owned = ownedArmors.some(a => a.id === arm.id);
+              const equipped = gear.armor === arm.id;
+              return `
+                <button class="av-gear-item av-armor-item ${equipped ? 'av-gear-equipped' : ''} ${!owned ? 'av-armor-locked' : ''}"
+                        onclick="${owned ? `App.equipGear('armor','${arm.id}')` : `App.buyArmor('${arm.id}')`}"
+                        title="${arm.label}">
+                  <span class="av-armor-preview armor-${arm.id}-preview"></span>
+                  <span>${arm.label}</span>
+                  ${!owned ? `<span class="av-armor-price"><i data-lucide="coins" class="icon-xs"></i>${arm.price}</span>` : ''}
+                  ${equipped ? '<span class="av-gear-check">✓</span>' : ''}
+                </button>`;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="av-gear-group">
+          <div class="av-gear-label"><i data-lucide="award" class="icon-xs"></i> Emblem</div>
+          <div class="av-gear-row">
+            ${unlockedEmblems.length === 0
+              ? `<div class="av-gear-empty">Earn achievements to unlock emblems</div>`
+              : unlockedEmblems.map(em => `
+                <button class="av-gear-item ${gear.emblem === em.id ? 'av-gear-equipped' : ''}"
+                        onclick="App.equipGear('emblem','${em.id}')"
+                        title="${em.desc}">
+                  ${em.icon}<span>${em.label}</span>
+                  ${gear.emblem === em.id ? '<span class="av-gear-check">✓</span>' : ''}
+                </button>`).join('')}
+          </div>
+        </div>
+
+        <!-- Achievements -->
+        <div class="av-section-title">Achievements <span class="av-badge-count">${(u.badges || []).length} / ${Gamification.BADGES.length}</span></div>
+        <div class="av-badges-grid">
+          ${Gamification.BADGES.map(b => {
+            const earned = (u.badges || []).includes(b.id);
+            return `
+              <div class="av-badge ${earned ? 'av-badge-earned' : 'av-badge-locked'}" title="${b.desc}">
+                <span class="av-badge-icon">${earned ? b.icon : '🔒'}</span>
+                <span class="av-badge-title">${b.title}</span>
+              </div>`;
+          }).join('')}
+        </div>
+
+        ${Gamification.canPrestige(u) ? `
+        <div class="av-prestige-section">
+          <div class="av-prestige-title">Prestige Available</div>
+          <div class="av-prestige-desc">Reset XP to Level 1 and earn a Prestige title. Badges and streak preserved.</div>
+          <button class="btn btn-primary" onclick="App.performPrestige()">✦ Prestige Now</button>
+        </div>` : ''}
+
+        <div style="height:40px;"></div>
+      </div>
+      ${renderBottomNav()}
+    `;
+  }
+
+  // ── RPG: Weekly Challenge Card ────────────────────────────────────────────
+
+  function renderWeeklyChallengeCard(s) {
+    const challenge = s.user.weeklyChallenge;
+    if (!challenge) return '';
+    const prog = Gamification.getWeeklyChallengeProgress(challenge, s.user, s.tasks);
+    if (!prog) return '';
+    const pct = prog.pct;
+    const fillClass = prog.completed ? 'wc-fill-done' : pct >= 70 ? 'wc-fill-hot' : '';
+    return `
+      <div class="weekly-challenge-card ${prog.completed ? 'wc-completed' : ''}">
+        <div class="wc-header">
+          <span class="wc-label"><i data-lucide="zap" class="icon-xs"></i> WEEKLY CHALLENGE</span>
+          <span class="wc-days">${prog.completed ? '✓ Done' : `${prog.daysLeft}d left`}</span>
+        </div>
+        <div class="wc-desc">${h(prog.desc)}</div>
+        <div class="wc-bar-wrap">
+          <div class="wc-bar">
+            <div class="wc-fill ${fillClass}" style="width:${pct}%"></div>
+          </div>
+          <span class="wc-count">${prog.current}/${prog.goal}</span>
+        </div>
+        <div class="wc-reward">
+          <i data-lucide="gift" class="icon-xs"></i>
+          Reward: +${prog.rewardXP} XP · +${prog.rewardCoins} coins
+        </div>
+      </div>`;
   }
 
   // ── Focus Mode ────────────────────────────────────────────────────────────
@@ -2077,10 +2353,12 @@ const App = (() => {
       currentPage = 'home';
     }
 
+    const wasFromFocus = focusTaskId === taskId;
+
     // ── Recurring task: award XP but reset for next occurrence ───────────────
     if (task.recurrence) {
       const tempDone = s.tasks.map(t => t.id === taskId ? { ...t, status: 'done' } : t);
-      const result = Gamification.completeTask(s.user, task, tempDone, s.milestones);
+      const result = Gamification.completeTask(s.user, task, tempDone, s.milestones, wasFromFocus ? 'focus' : '');
       const activeHistory = [...new Set([...(result.user.activeHistory || []), todayStr])];
       State.set(st => ({
         ...st,
@@ -2099,7 +2377,7 @@ const App = (() => {
     const updatedTasks = s.tasks.map(t => t.id === taskId
       ? { ...t, status: 'done', completedAt: new Date().toISOString(), ...(actualMinutes ? { actualMinutes } : {}) }
       : t);
-    const result = Gamification.completeTask(s.user, task, updatedTasks, s.milestones);
+    const result = Gamification.completeTask(s.user, task, updatedTasks, s.milestones, wasFromFocus ? 'focus' : '');
     let { user, xpEarned, multiplier, leveledUp, newBadges, levelInfo, isPerfectDay, perfectDayBonus, seasonalEarned, seasonalQuest } = result;
 
     const updatedMilestones = s.milestones.map(m => ({
@@ -2474,16 +2752,16 @@ const App = (() => {
 
     return `
       <div class="control-bar">
-        <span class="ctrl-title">Goals</span>
+        <span class="ctrl-title">Campaigns</span>
         <span class="ctrl-spacer"></span>
         <button class="ctrl-btn" onclick="App.nav('home')"><i data-lucide="home"></i> Today</button>
-        <button class="ctrl-btn ctrl-btn-primary" onclick="App.nav('new-goal')"><i data-lucide="plus"></i> New Goal</button>
+        <button class="ctrl-btn ctrl-btn-primary" onclick="App.nav('new-goal')"><i data-lucide="plus"></i> New Campaign</button>
       </div>
       <div class="page goals-manager-page">
         <div class="gm-header">
-          <h2><i data-lucide="target" class="icon-md"></i> Goals Manager</h2>
+          <h2><i data-lucide="target" class="icon-md"></i> Campaigns</h2>
           <button class="btn btn-primary btn-sm" onclick="App.nav('new-goal')">
-            <i data-lucide="plus" class="icon-sm"></i> New Goal
+            <i data-lucide="plus" class="icon-sm"></i> New Campaign
           </button>
         </div>
 
@@ -2581,11 +2859,11 @@ const App = (() => {
 
   function renderBottomNav() {
     const items = [
-      { id: 'home',          icon: 'home',           label: 'Today' },
-      { id: 'goals-manager', icon: 'target',         label: 'Goals' },
-      { id: 'map',           icon: 'map',            label: 'Map' },
-      { id: 'calendar',      icon: 'calendar',       label: 'Calendar' },
-      { id: 'profile',       icon: 'user',           label: 'Profile' },
+      { id: 'home',          icon: 'home',     label: 'Today'     },
+      { id: 'goals-manager', icon: 'target',   label: 'Campaigns' },
+      { id: 'map',           icon: 'map',      label: 'Map'       },
+      { id: 'calendar',      icon: 'calendar', label: 'Calendar'  },
+      { id: 'avatar',        icon: 'shield',   label: 'Dossier'   },
     ];
     return `
       <nav class="bottom-nav">
@@ -2607,7 +2885,7 @@ const App = (() => {
         <div class="gen-skeleton-wrap">
           <div class="gen-status">
             <div class="spinner"></div>
-            <span>Building your Quest…</span>
+            <span>Building your Campaign…</span>
           </div>
           <div class="skel-plan">
             <div class="skel-section">
@@ -2696,7 +2974,7 @@ const App = (() => {
                <div class="preview-header-title">Edit Plan</div>
                <div class="preview-header-badge">Live Edit</div>`
             : `<button class="btn-back" onclick="App.backToQuestions()">← Edit</button>
-               <div class="preview-header-title">Your Quest Plan</div>
+               <div class="preview-header-title">Your Campaign Plan</div>
                <div class="preview-header-actions">
                  <button class="btn btn-ghost btn-regen" onclick="App.regeneratePlan()"><i data-lucide="refresh-cw" class="icon-sm"></i> Regenerate</button>
                  <button class="btn btn-primary" onclick="App.approvePlan()">Approve →</button>
@@ -2728,11 +3006,11 @@ const App = (() => {
         </div>
 
         <div class="preview-section">
-          <div class="preview-section-label">MILESTONE ROADMAP</div>
+          <div class="preview-section-label">CHAPTER ROADMAP</div>
           ${milestones.map((m, i) => `
             <div class="preview-milestone ${planChatPending ? 'pcp-hl-ms' : ''}" style="border-left:3px solid ${m.color};">
               <div class="pm-top">
-                <span class="pm-world" style="color:${m.color};">World ${i + 1}</span>
+                <span class="pm-world" style="color:${m.color};">Chapter ${i + 1}</span>
                 <span class="pm-title">${h(m.title)}</span>
                 <span class="pm-date">${fmtDateShort(m.deadline)}</span>
               </div>
@@ -2767,7 +3045,7 @@ const App = (() => {
         </div>
 
         <div class="preview-section">
-          <div class="preview-section-label">MILESTONE 1 — PREVIEW TASKS (${sampleTasks.length} of ${tasks.filter(t=>t.milestoneId===milestones[0]?.id).length})</div>
+          <div class="preview-section-label">CHAPTER 1 — PREVIEW ACTIONS (${sampleTasks.length} of ${tasks.filter(t=>t.milestoneId===milestones[0]?.id).length})</div>
           ${sampleTasks.some(t => t.estimatedMinutes > dailyMins * 1.5) ? `
           <div style="background:rgba(251,191,36,0.1);border:1px solid var(--accent);border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:0.8rem;color:var(--accent);">
             ⚠️ Some tasks are longer than your ~${dailyMins}-min daily budget. Use the chat → "Shorten all tasks to 30 minutes".
@@ -2818,7 +3096,7 @@ const App = (() => {
           ${editingActivePlan
             ? `<button class="btn btn-ghost" onclick="App.nav('home')">← Back to Dashboard</button>`
             : `<button class="btn btn-ghost" onclick="App.backToQuestions()">← Edit Answers</button>
-               <button class="btn btn-primary btn-lg" onclick="App.approvePlan()">✓ Approve & Start Quest</button>`
+               <button class="btn btn-primary btn-lg" onclick="App.approvePlan()">✓ Approve & Begin Campaign</button>`
           }
         </div>
 
@@ -3731,6 +4009,8 @@ const App = (() => {
       else if (currentPage === 'calendar')      pageHtml = renderCalendar();
       else if (currentPage === 'profile')       pageHtml = renderProfile();
       else if (currentPage === 'review')        pageHtml = renderReview();
+      else if (currentPage === 'class-select')  pageHtml = renderClassSelect();
+      else if (currentPage === 'avatar')        pageHtml = renderAvatar();
       else pageHtml = renderHome();
 
       app.innerHTML = `
@@ -3748,11 +4028,21 @@ const App = (() => {
   // ── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
-    const s = State.get();
+    let s = State.get();
 
     // Refresh weekly freezes
     const refreshed = Gamification.refreshWeeklyFreezes(s.user);
-    if (refreshed !== s.user) State.set({ user: refreshed });
+    if (refreshed !== s.user) { State.set({ user: refreshed }); s = State.get(); }
+
+    // Generate or refresh weekly challenge every Monday
+    {
+      const prog = Gamification.getWeeklyChallengeProgress(s.user.weeklyChallenge, s.user, s.tasks);
+      if (!prog) {
+        // No current challenge — generate one
+        const challenge = Gamification.generateWeeklyChallenge();
+        State.set(st => ({ ...st, user: { ...st.user, weeklyChallenge: challenge } }));
+      }
+    }
 
     // Auto-reschedule overdue
     autoReschedule();
@@ -3850,5 +4140,7 @@ const App = (() => {
     calUnscheduleTask,
     calDragStart, calDragEnd, calDragOver, calDropOnDay, calDropOnSidebar,
     calAutoSchedule, calOpenAvailability, calCloseAvailability, calSaveAvailability,
+    // RPG system
+    selectClass, equipGear, buyArmor,
   };
 })();

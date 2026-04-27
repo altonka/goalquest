@@ -24,6 +24,11 @@ const State = (() => {
       comebackCount: 0,         // times returned after breaking streak
       lastComebackDate: null,   // YYYY-MM-DD — prevents repeat comeback screen same day
       goalIdentity: '',         // e.g. "a consultant"
+      // ── RPG System ──────────────────────────────────────────────────────────
+      coins: 0,                 // earned from completing actions, spent in gear shop
+      class: null,              // 'strategist'|'scholar'|'founder'|'athlete'|'creator'
+      gear: { sigil: null, armor: 'default', emblem: null },
+      weeklyChallenge: null,    // { type, desc, goal, current, weekOf, rewardXP, rewardCoins, completed }
     },
     currentGoalId: null,
     calendarEvents: [],   // { id, type:'USER_EVENT', title, date, startHour, endHour, isCompleted, isPinned }
@@ -53,6 +58,12 @@ const State = (() => {
       if (!saved.planChat) saved.planChat = [];
       if (!saved.planVersions) saved.planVersions = [];
       if (!saved.userAvailability) saved.userAvailability = { workStart: 9, workEnd: 22, maxDailyMinutes: 240 };
+      // RPG field migrations
+      if (saved.user.coins == null) saved.user.coins = 0;
+      if (saved.user.class === undefined) saved.user.class = null;
+      if (!saved.user.gear) saved.user.gear = { sigil: null, armor: 'default', emblem: null };
+      if (!saved.user.gear.armor) saved.user.gear.armor = 'default';
+      if (saved.user.weeklyChallenge === undefined) saved.user.weeklyChallenge = null;
       // Migrate goals: ensure every goal has a status field
       if (saved.goals) saved.goals = saved.goals.map(g => g.status ? g : { ...g, status: 'active' });
       // Migrate tasks: ensure new fields exist
